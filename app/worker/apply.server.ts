@@ -98,22 +98,23 @@ function isStale(before: Snapshot, node: ApplyReadNode["node"]): boolean {
   return false;
 }
 
-async function markItem(id: string, status: string, message: string | null): Promise<void> {
+async function markItem(id: string, status: string, message: string | null): Promise<string> {
   await db.jobItem.update({ where: { id }, data: { status, message } });
+  return status;
 }
 
-// Apply one item's staged after-values. Re-reads the live product for a stale
-// check first (price/status/metafield), then runs the needed mutations in
-// order. Any userError fails the item; already-applied mutations are noted.
+// Apply one item's staged after-values, returning the resulting item status.
+// Re-reads the live product for a stale check first (price/status/metafield),
+// then runs the needed mutations in order. Any userError fails the item;
+// already-applied mutations are noted.
 async function applyItem(
   job: Job,
   item: JobItem,
   admin: WorkerAdmin,
   throttle: Throttler,
-): Promise<void> {
+): Promise<string> {
   if (!item.beforeJson || !item.afterJson) {
-    await markItem(item.id, "failed", "Missing staged values.");
-    return;
+    return markItem(item.id, "failed", "Missing staged values.");
   }
 
   const before = JSON.parse(item.beforeJson) as Snapshot;
@@ -125,12 +126,10 @@ async function applyItem(
   });
 
   if (!read.node) {
-    await markItem(item.id, "failed", "Product no longer exists.");
-    return;
+    return markItem(item.id, "failed", "Product no longer exists.");
   }
   if (isStale(before, read.node)) {
-    await markItem(item.id, "skipped_stale", "Value changed since preview.");
-    return;
+    return markItem(item.id, "skipped_stale", "Value changed since preview.");
   }
 
   const applied: string[] = [];
@@ -216,7 +215,7 @@ async function applyItem(
       applied.push("metafield");
     }
 
-    await markItem(item.id, "applied", null);
+    return markItem(item.id, "applied", null);
   } catch (error) {
     logger.error("item mutation failed", {
       shop: job.shop,
@@ -224,16 +223,18 @@ async function applyItem(
       itemId: item.id,
       error: error instanceof Error ? error.message : String(error),
     });
-    await failItem(item.id, "apply", "The update could not be completed.", applied);
+    return failItem(item.id, "apply", "The update could not be completed.", applied);
   }
 }
 
-function failItem(id: string, field: string, message: string, applied: string[]): Promise<void> {
+function failItem(id: string, field: string, message: string, applied: string[]): Promise<string> {
   const suffix = applied.length > 0 ? ` (already applied: ${applied.join(", ")})` : "";
   return markItem(id, "failed", `${field}: ${message}${suffix}`);
 }
 
-async function finalize(jobId: string): Promise<void> {
+// Recompute the job's counts from its items. Used to seed live progress at the
+// start of a run and to write the authoritative final counts.
+async function computeCounts(jobId: string) {
   const grouped = await db.jobItem.groupBy({
     by: ["status"],
     where: { jobId },
@@ -244,19 +245,21 @@ async function finalize(jobId: string): Promise<void> {
   const successCount = count("applied");
   const failedCount = count("failed");
   const skippedCount = count("skipped_stale") + count("skipped_unchanged") + count("invalid");
-  const status = failedCount > 0 ? "completed_with_errors" : "completed";
+  return {
+    successCount,
+    failedCount,
+    skippedCount,
+    processedCount: successCount + failedCount + skippedCount,
+  };
+}
+
+async function finalize(jobId: string): Promise<void> {
+  const counts = await computeCounts(jobId);
+  const status = counts.failedCount > 0 ? "completed_with_errors" : "completed";
 
   await db.job.updateMany({
     where: { id: jobId, status: "running" },
-    data: {
-      status,
-      successCount,
-      failedCount,
-      skippedCount,
-      processedCount: successCount + failedCount + skippedCount,
-      finishedAt: new Date(),
-      heartbeatAt: null,
-    },
+    data: { ...counts, status, finishedAt: new Date(), heartbeatAt: null },
   });
 }
 
@@ -266,6 +269,12 @@ export async function runApply(job: Job, admin: WorkerAdmin, throttle: Throttler
   await db.job.updateMany({
     where: { id: job.id, status: { in: ["queued", "running"] } },
     data: { status: "running", startedAt: job.startedAt ?? new Date(), heartbeatAt: new Date() },
+  });
+
+  // Seed live counts (includes staging-time skips and any resumed applies).
+  await db.job.updateMany({
+    where: { id: job.id, status: "running" },
+    data: await computeCounts(job.id),
   });
 
   const pending = await db.jobItem.findMany({
@@ -280,8 +289,17 @@ export async function runApply(job: Job, admin: WorkerAdmin, throttle: Throttler
       return;
     }
 
-    await applyItem(job, item, admin, throttle);
-    await db.job.update({ where: { id: job.id }, data: { heartbeatAt: new Date() } });
+    const outcome = await applyItem(job, item, admin, throttle);
+    await db.job.update({
+      where: { id: job.id },
+      data: {
+        heartbeatAt: new Date(),
+        processedCount: { increment: 1 },
+        successCount: outcome === "applied" ? { increment: 1 } : undefined,
+        failedCount: outcome === "failed" ? { increment: 1 } : undefined,
+        skippedCount: outcome === "skipped_stale" ? { increment: 1 } : undefined,
+      },
+    });
   }
 
   await finalize(job.id);
