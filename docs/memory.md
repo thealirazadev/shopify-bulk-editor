@@ -4,6 +4,13 @@ Running log of what is done, what is in flight, and decisions worth remembering.
 
 ## Completed
 
+- 2026-07-18 — Phase 3 (job history and undo) complete and green. Job history list (IndexTable, newest
+  first, shop-scoped, paginated, status badges, row navigation). Undo: pure inverse computation swaps
+  each applied item's before/after; undo job created directly in `staged` with pre-computed items and
+  runs through the standard preview + apply path; eligibility enforced (most-recent applied edit/import
+  only, not already undone, `undoOfJobId` unique blocks concurrent undo); apply completion sets the
+  original's `undoneByJobId`; items changed since apply are `skipped_stale`. Tests: inverse computation
+  unit tests + undo apply integration (restore + undoneByJobId + stale conflict skip). 67 tests pass.
 - 2026-07-18 — Phase 2 (bulk engine) complete and green. Pure logic: edit-set validation + price math
   (half-up rounding, negative-flag, tag deltas, unchanged detection), throttle pacing, CSV export
   serialization + injection guard, CSV import row/column validation. Worker: DB-backed loop with
