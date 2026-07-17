@@ -8,6 +8,10 @@ import { renderToPipeableStream } from "react-dom/server";
 
 import { logger } from "./lib/logger.server";
 import { addDocumentResponseHeaders } from "./shopify.server";
+import { startWorker } from "./worker/worker.server";
+
+// Start the in-process background worker once when the server module loads.
+startWorker();
 
 export const streamTimeout = 5000;
 
