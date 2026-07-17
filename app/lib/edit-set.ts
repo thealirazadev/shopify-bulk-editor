@@ -187,3 +187,130 @@ export function validateEditSet(raw: unknown): ValidationResult {
 
   return { valid: true, editSet: { operations } };
 }
+
+// ---------------------------------------------------------------------------
+// After-value computation (staging). Resolves relative adjustments to absolute
+// target values and snapshots the before-values the edit will overwrite.
+
+export interface VariantPrice {
+  id: string;
+  price: string;
+}
+
+export interface TagSnapshot {
+  list: string[];
+  delta: string[];
+}
+
+export interface MetafieldSnapshot {
+  namespace: string;
+  key: string;
+  type: MetafieldType;
+  value: string | null;
+}
+
+// Only the fields the edit touches are captured (docs/architecture.md).
+export interface Snapshot {
+  variants?: VariantPrice[];
+  status?: string;
+  tags?: TagSnapshot;
+  metafield?: MetafieldSnapshot | null;
+}
+
+export interface ProductState {
+  status: string;
+  tags: string[];
+  variants: VariantPrice[];
+  metafield?: { value: string; type: string } | null;
+}
+
+export interface ItemComputation {
+  status: "pending" | "skipped_unchanged" | "invalid";
+  before: Snapshot;
+  after: Snapshot;
+  message?: string;
+}
+
+// Round half away from zero to 2 decimals, guarding binary-float error.
+export function roundHalfUp2(n: number): number {
+  const scaled = n * 100;
+  const rounded = Math.sign(scaled) * Math.round(Math.abs(scaled) + 1e-9);
+  return rounded / 100;
+}
+
+function fmt(price: string | number): string {
+  return roundHalfUp2(Number(price)).toFixed(2);
+}
+
+function computePriceNumber(currentPrice: string, op: PriceOperation): number {
+  const base = Number(currentPrice);
+  const value = Number(op.value);
+  if (op.op === "set") return roundHalfUp2(value);
+  if (op.op === "adjust_percent") return roundHalfUp2(base * (1 + value / 100));
+  return roundHalfUp2(base + value);
+}
+
+export function applyTagOp(current: string[], op: "add" | "remove", tag: string): TagSnapshot {
+  if (op === "add") {
+    if (current.includes(tag)) return { list: current, delta: [] };
+    return { list: [...current, tag], delta: [tag] };
+  }
+  if (!current.includes(tag)) return { list: current, delta: [] };
+  return { list: current.filter((entry) => entry !== tag), delta: [tag] };
+}
+
+// Compute a product's before/after snapshot for an edit set. Absolute values
+// only; relative adjustments are resolved here at staging time.
+export function computeItem(current: ProductState, editSet: EditSet): ItemComputation {
+  const before: Snapshot = {};
+  const after: Snapshot = {};
+  let changed = false;
+  let invalidMessage: string | null = null;
+
+  for (const op of editSet.operations) {
+    if (op.field === "price") {
+      before.variants = current.variants.map((variant) => ({ ...variant }));
+      after.variants = current.variants.map((variant) => {
+        const nextNumber = computePriceNumber(variant.price, op);
+        if (nextNumber < 0) {
+          invalidMessage = "A resulting price would be negative.";
+        }
+        const nextPrice = nextNumber.toFixed(2);
+        if (fmt(variant.price) !== nextPrice) changed = true;
+        return { id: variant.id, price: nextPrice };
+      });
+    } else if (op.field === "status") {
+      before.status = current.status;
+      after.status = op.value;
+      if (current.status !== op.value) changed = true;
+    } else if (op.field === "tags") {
+      const result = applyTagOp(current.tags, op.op, op.value);
+      before.tags = { list: current.tags, delta: result.delta };
+      after.tags = { list: result.list, delta: result.delta };
+      if (result.delta.length > 0) changed = true;
+    } else {
+      const currentValue = current.metafield?.value ?? null;
+      before.metafield = {
+        namespace: op.namespace,
+        key: op.key,
+        type: op.type,
+        value: currentValue,
+      };
+      after.metafield = {
+        namespace: op.namespace,
+        key: op.key,
+        type: op.type,
+        value: op.value,
+      };
+      if (currentValue !== op.value) changed = true;
+    }
+  }
+
+  if (invalidMessage) {
+    return { status: "invalid", before, after, message: invalidMessage };
+  }
+  if (!changed) {
+    return { status: "skipped_unchanged", before, after };
+  }
+  return { status: "pending", before, after };
+}

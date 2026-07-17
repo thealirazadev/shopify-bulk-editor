@@ -1,6 +1,21 @@
 import { describe, expect, it } from "vitest";
 
-import { validateEditSet } from "./edit-set";
+import { applyTagOp, computeItem, roundHalfUp2, validateEditSet } from "./edit-set";
+import type { EditSet, ProductState } from "./edit-set";
+
+function state(overrides: Partial<ProductState> = {}): ProductState {
+  return {
+    status: "ACTIVE",
+    tags: ["sale"],
+    variants: [{ id: "gid://shopify/ProductVariant/1", price: "10.00" }],
+    metafield: null,
+    ...overrides,
+  };
+}
+
+function set(operations: EditSet["operations"]): EditSet {
+  return { operations };
+}
 
 describe("validateEditSet", () => {
   it("accepts a valid multi-field edit set", () => {
@@ -112,5 +127,103 @@ describe("validateEditSet", () => {
       validateEditSet({ operations: [{ ...base, key: "x", type: "number_decimal", value: "1.5" }] })
         .valid,
     ).toBe(false);
+  });
+});
+
+describe("roundHalfUp2", () => {
+  it("rounds half up to two decimals", () => {
+    expect(roundHalfUp2(10.005)).toBe(10.01);
+    expect(roundHalfUp2(21.989)).toBe(21.99);
+    expect(roundHalfUp2(10)).toBe(10);
+    expect(roundHalfUp2(0)).toBe(0);
+  });
+});
+
+describe("computeItem price math", () => {
+  it("resolves a percent adjustment to an absolute 2-decimal price", () => {
+    const result = computeItem(
+      state(),
+      set([{ field: "price", op: "adjust_percent", value: "10" }]),
+    );
+    expect(result.status).toBe("pending");
+    expect(result.after.variants).toEqual([
+      { id: "gid://shopify/ProductVariant/1", price: "11.00" },
+    ]);
+    expect(result.before.variants).toEqual([
+      { id: "gid://shopify/ProductVariant/1", price: "10.00" },
+    ]);
+  });
+
+  it("resolves a fixed amount and a set", () => {
+    expect(
+      computeItem(state(), set([{ field: "price", op: "adjust_amount", value: "2.5" }])).after
+        .variants,
+    ).toEqual([{ id: "gid://shopify/ProductVariant/1", price: "12.50" }]);
+    expect(
+      computeItem(state(), set([{ field: "price", op: "set", value: "9" }])).after.variants,
+    ).toEqual([{ id: "gid://shopify/ProductVariant/1", price: "9.00" }]);
+  });
+
+  it("flags a negative resulting price as invalid", () => {
+    const result = computeItem(
+      state(),
+      set([{ field: "price", op: "adjust_amount", value: "-15" }]),
+    );
+    expect(result.status).toBe("invalid");
+    expect(result.message).toContain("negative");
+  });
+
+  it("marks an unchanged price edit skipped_unchanged", () => {
+    const result = computeItem(state(), set([{ field: "price", op: "set", value: "10" }]));
+    expect(result.status).toBe("skipped_unchanged");
+  });
+});
+
+describe("computeItem tags", () => {
+  it("adds a new tag and records the delta", () => {
+    const result = computeItem(state(), set([{ field: "tags", op: "add", value: "clearance" }]));
+    expect(result.status).toBe("pending");
+    expect(result.after.tags).toEqual({ list: ["sale", "clearance"], delta: ["clearance"] });
+  });
+
+  it("skips adding an existing tag as unchanged", () => {
+    const result = computeItem(state(), set([{ field: "tags", op: "add", value: "sale" }]));
+    expect(result.status).toBe("skipped_unchanged");
+    expect(result.after.tags?.delta).toEqual([]);
+  });
+
+  it("removes a present tag and skips an absent removal", () => {
+    expect(applyTagOp(["sale", "new"], "remove", "sale")).toEqual({
+      list: ["new"],
+      delta: ["sale"],
+    });
+    expect(applyTagOp(["new"], "remove", "sale")).toEqual({ list: ["new"], delta: [] });
+  });
+});
+
+describe("computeItem status and metafield", () => {
+  it("computes a status change and its before value", () => {
+    const result = computeItem(state(), set([{ field: "status", op: "set", value: "DRAFT" }]));
+    expect(result.status).toBe("pending");
+    expect(result.before.status).toBe("ACTIVE");
+    expect(result.after.status).toBe("DRAFT");
+  });
+
+  it("captures the prior metafield value (null when absent)", () => {
+    const result = computeItem(
+      state(),
+      set([
+        {
+          field: "metafield",
+          op: "set",
+          namespace: "custom",
+          key: "badge",
+          type: "single_line_text_field",
+          value: "New",
+        },
+      ]),
+    );
+    expect(result.before.metafield?.value).toBeNull();
+    expect(result.after.metafield?.value).toBe("New");
   });
 });
