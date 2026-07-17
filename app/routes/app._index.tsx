@@ -1,6 +1,6 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useNavigate, useLoaderData, useSearchParams } from "@remix-run/react";
+import { useFetcher, useNavigate, useLoaderData, useSearchParams } from "@remix-run/react";
 import {
   Badge,
   Banner,
@@ -20,8 +20,10 @@ import {
 import type { IndexFiltersProps } from "@shopify/polaris";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import db from "~/db.server";
 import { apiError, newRequestId } from "~/lib/errors";
 import { compileFilter, filterFromParams, isEmptyFilter } from "~/lib/filters";
+import type { ProductFilter } from "~/lib/filters";
 import { logger } from "~/lib/logger.server";
 import { authenticate } from "~/shopify.server";
 
@@ -87,8 +89,21 @@ function priceRange(node: ProductNode): string {
   return min === max ? min : `${min} - ${max}`;
 }
 
+async function loadSavedFilters(shop: string) {
+  const rows = await db.savedFilter.findMany({
+    where: { shop },
+    orderBy: { name: "asc" },
+  });
+
+  return rows.map((row) => ({
+    id: row.id,
+    name: row.name,
+    filter: JSON.parse(row.filterJson) as ProductFilter,
+  }));
+}
+
 export async function loader({ request }: LoaderFunctionArgs) {
-  const { admin } = await authenticate.admin(request);
+  const { admin, session } = await authenticate.admin(request);
   const requestId = newRequestId();
   const url = new URL(request.url);
   const filter = filterFromParams(url.searchParams);
@@ -102,7 +117,10 @@ export async function loader({ request }: LoaderFunctionArgs) {
       : { first: PAGE_SIZE, after: cursor || undefined, query: query || undefined };
 
   try {
-    const response = await admin.graphql(BROWSE_QUERY, { variables });
+    const [response, savedFilters] = await Promise.all([
+      admin.graphql(BROWSE_QUERY, { variables }),
+      loadSavedFilters(session.shop),
+    ]);
     const body = (await response.json()) as BrowseResponse;
 
     if (!body.data) {
@@ -121,11 +139,13 @@ export async function loader({ request }: LoaderFunctionArgs) {
       })),
       pageInfo: body.data.products.pageInfo,
       collections: body.data.collections.edges.map((edge) => edge.node),
+      savedFilters,
       filter,
       error: null as null | { code: string; message: string; requestId: string },
     });
   } catch (error) {
     logger.error("failed to load products", {
+      shop: session.shop,
       requestId,
       error: error instanceof Error ? error.message : String(error),
     });
@@ -134,9 +154,82 @@ export async function loader({ request }: LoaderFunctionArgs) {
       products: [],
       pageInfo: { hasNextPage: false, hasPreviousPage: false, startCursor: null, endCursor: null },
       collections: [],
+      savedFilters: [] as { id: string; name: string; filter: ProductFilter }[],
       filter,
       error: apiError("UPSTREAM_ERROR", "Could not load products. Try again.", requestId).error,
     });
+  }
+}
+
+export async function action({ request }: ActionFunctionArgs) {
+  const { session } = await authenticate.admin(request);
+  const requestId = newRequestId();
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+
+  try {
+    if (intent === "saveFilter") {
+      const name = String(formData.get("name") ?? "").trim();
+      if (name.length < 1 || name.length > 50) {
+        return json(
+          {
+            ok: false as const,
+            error: apiError("INVALID_INPUT", "Name must be 1 to 50 characters.", requestId).error,
+          },
+          { status: 400 },
+        );
+      }
+
+      const toStore = filterFromParams(
+        new URLSearchParams([...formData.entries()].map(([key, value]) => [key, String(value)])),
+      );
+
+      const existing = await db.savedFilter.findUnique({
+        where: { shop_name: { shop: session.shop, name } },
+      });
+      if (existing) {
+        return json(
+          {
+            ok: false as const,
+            error: apiError("INVALID_INPUT", "A filter with that name already exists.", requestId)
+              .error,
+          },
+          { status: 400 },
+        );
+      }
+
+      const saved = await db.savedFilter.create({
+        data: { shop: session.shop, name, filterJson: JSON.stringify(toStore) },
+      });
+
+      return json({ ok: true as const, savedFilterId: saved.id });
+    }
+
+    if (intent === "deleteFilter") {
+      const savedFilterId = String(formData.get("savedFilterId") ?? "");
+      await db.savedFilter.deleteMany({ where: { id: savedFilterId, shop: session.shop } });
+      return json({ ok: true as const });
+    }
+
+    return json(
+      { ok: false as const, error: apiError("INVALID_INPUT", "Unknown action.", requestId).error },
+      { status: 400 },
+    );
+  } catch (error) {
+    logger.error("saved filter action failed", {
+      shop: session.shop,
+      requestId,
+      intent,
+      error: error instanceof Error ? error.message : String(error),
+    });
+
+    return json(
+      {
+        ok: false as const,
+        error: apiError("INTERNAL", "Could not save the filter. Try again.", requestId).error,
+      },
+      { status: 500 },
+    );
   }
 }
 
@@ -150,7 +243,9 @@ export default function ProductsIndex() {
   const data = useLoaderData<typeof loader>();
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const savedFetcher = useFetcher<typeof action>();
   const { mode, setMode } = useSetIndexFiltersMode();
+  const [selectedTab, setSelectedTab] = useState(0);
 
   const [status, setStatus] = useState<string[]>(data.filter.status ? [data.filter.status] : []);
   const [collection, setCollection] = useState<string[]>(
@@ -191,6 +286,69 @@ export default function ProductsIndex() {
     setTag("");
     setTitle("");
   }, []);
+
+  const applyFilter = useCallback((filter: ProductFilter) => {
+    setStatus(filter.status ? [filter.status] : []);
+    setCollection(filter.collectionId ? [filter.collectionId] : []);
+    setVendor(filter.vendor ?? "");
+    setTag(filter.tag ?? "");
+    setTitle(filter.title ?? "");
+  }, []);
+
+  const handleSelectTab = useCallback(
+    (index: number) => {
+      setSelectedTab(index);
+      if (index === 0) {
+        handleClearAll();
+      } else {
+        const saved = data.savedFilters[index - 1];
+        if (saved) applyFilter(saved.filter);
+      }
+    },
+    [data.savedFilters, handleClearAll, applyFilter],
+  );
+
+  const handleCreateNewView = useCallback(
+    async (name: string) => {
+      const body = new URLSearchParams({ intent: "saveFilter", name });
+      if (status[0]) body.set("status", status[0]);
+      if (collection[0]) body.set("collectionId", collection[0]);
+      if (vendor.trim()) body.set("vendor", vendor.trim());
+      if (tag.trim()) body.set("tag", tag.trim());
+      if (title.trim()) body.set("title", title.trim());
+      savedFetcher.submit(body, { method: "post" });
+      return true;
+    },
+    [status, collection, vendor, tag, title, savedFetcher],
+  );
+
+  const deleteSavedFilter = useCallback(
+    (savedFilterId: string) => {
+      savedFetcher.submit({ intent: "deleteFilter", savedFilterId }, { method: "post" });
+      setSelectedTab(0);
+      return Promise.resolve(true);
+    },
+    [savedFetcher],
+  );
+
+  const tabs = [
+    { id: "all", content: "All products" },
+    ...data.savedFilters.map((saved, index) => ({
+      id: saved.id,
+      content: saved.name,
+      actions: [
+        {
+          type: "delete" as const,
+          onPrimaryAction: () => deleteSavedFilter(saved.id),
+        },
+      ],
+      // Selecting a view is handled by onSelect via its index.
+      index: index + 1,
+    })),
+  ];
+
+  const saveError =
+    savedFetcher.data && !savedFetcher.data.ok ? savedFetcher.data.error.message : null;
 
   const { selectedResources, allResourcesSelected, handleSelectionChange } = useIndexResourceState(
     data.products.map((product) => ({ id: product.id })),
@@ -301,16 +459,23 @@ export default function ProductsIndex() {
             </Banner>
           ) : null}
 
+          {saveError ? (
+            <Banner tone="critical" title="Could not save filter">
+              <p>{saveError}</p>
+            </Banner>
+          ) : null}
+
           <Card padding="0">
             <IndexFilters
               queryValue={title}
               queryPlaceholder="Search by product title"
               onQueryChange={setTitle}
               onQueryClear={() => setTitle("")}
-              tabs={[{ id: "all", content: "All products" }]}
-              selected={0}
-              onSelect={() => {}}
-              canCreateNewView={false}
+              tabs={tabs}
+              selected={selectedTab}
+              onSelect={handleSelectTab}
+              canCreateNewView
+              onCreateNewView={handleCreateNewView}
               filters={filters}
               appliedFilters={appliedFilters}
               onClearAll={handleClearAll}
