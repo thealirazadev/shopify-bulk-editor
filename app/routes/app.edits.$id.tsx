@@ -1,14 +1,27 @@
-import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import type { ActionFunctionArgs, LoaderFunctionArgs, SerializeFrom } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
-import { useLoaderData, useNavigation, useRevalidator, useSubmit } from "@remix-run/react";
 import {
+  useLoaderData,
+  useNavigate,
+  useNavigation,
+  useRevalidator,
+  useSearchParams,
+  useSubmit,
+} from "@remix-run/react";
+import {
+  Badge,
   Banner,
   BlockStack,
+  Box,
   Button,
   Card,
+  ChoiceList,
+  IndexTable,
   InlineStack,
   Layout,
+  Modal,
   Page,
+  Pagination,
   ProgressBar,
   Select,
   Text,
@@ -18,6 +31,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import db from "~/db.server";
 import { validateEditSet } from "~/lib/edit-set";
+import type { Snapshot } from "~/lib/edit-set";
 import { apiError, newRequestId } from "~/lib/errors";
 import type { Selection } from "~/lib/jobs";
 import { logger } from "~/lib/logger.server";
@@ -32,6 +46,77 @@ function selectionSummary(job: { selectionJson: string | null }): string {
   return "All products matching the current filter";
 }
 
+interface ChangeRow {
+  label: string;
+  from: string;
+  to: string;
+}
+
+interface PreviewItem {
+  id: string;
+  productTitle: string;
+  status: string;
+  message: string | null;
+  csvRow: number | null;
+  changes: ChangeRow[];
+}
+
+function priceText(variants: { price: string }[]): string {
+  if (variants.length === 0) return "—";
+  const amounts = variants.map((variant) => Number(variant.price));
+  const min = Math.min(...amounts);
+  const max = Math.max(...amounts);
+  return min === max ? min.toFixed(2) : `${min.toFixed(2)}–${max.toFixed(2)}`;
+}
+
+function changeRows(before: Snapshot, after: Snapshot): ChangeRow[] {
+  const rows: ChangeRow[] = [];
+  if (after.variants && before.variants) {
+    rows.push({ label: "Price", from: priceText(before.variants), to: priceText(after.variants) });
+  }
+  if (after.status !== undefined) {
+    rows.push({ label: "Status", from: before.status ?? "", to: after.status });
+  }
+  if (after.tags && before.tags) {
+    rows.push({
+      label: "Tags",
+      from: before.tags.list.join(", ") || "(none)",
+      to: after.tags.list.join(", ") || "(none)",
+    });
+  }
+  if (after.metafield) {
+    rows.push({
+      label: `Metafield ${after.metafield.key}`,
+      from: before.metafield?.value ?? "(none)",
+      to: after.metafield.value ?? "(none)",
+    });
+  }
+  return rows;
+}
+
+function toPreviewItem(row: {
+  id: string;
+  productTitle: string;
+  status: string;
+  message: string | null;
+  csvRow: number | null;
+  beforeJson: string | null;
+  afterJson: string | null;
+}): PreviewItem {
+  const before = row.beforeJson ? (JSON.parse(row.beforeJson) as Snapshot) : {};
+  const after = row.afterJson ? (JSON.parse(row.afterJson) as Snapshot) : {};
+  return {
+    id: row.id,
+    productTitle: row.productTitle,
+    status: row.status,
+    message: row.message,
+    csvRow: row.csvRow,
+    changes: changeRows(before, after),
+  };
+}
+
+const PAGE_SIZE = 50;
+
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
   const job = await db.job.findFirst({ where: { id: params.id, shop: session.shop } });
@@ -45,15 +130,51 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     return redirect(`/app/jobs/${job.id}`);
   }
 
+  const url = new URL(request.url);
+  const page = Math.max(1, Number(url.searchParams.get("page") ?? "1"));
+  const itemStatus = url.searchParams.get("itemStatus");
+  const jobSummary = {
+    id: job.id,
+    status: job.status,
+    totalItems: job.totalItems,
+    processedCount: job.processedCount,
+    errorMessage: job.errorMessage,
+  };
+
+  if (job.status !== "staged") {
+    return json({
+      job: jobSummary,
+      selectionText: selectionSummary(job),
+      items: [] as PreviewItem[],
+      counts: {} as Record<string, number>,
+      page,
+      hasNext: false,
+      itemStatus,
+    });
+  }
+
+  const where = { jobId: job.id, ...(itemStatus ? { status: itemStatus } : {}) };
+  const [rows, grouped] = await Promise.all([
+    db.jobItem.findMany({
+      where,
+      orderBy: { id: "asc" },
+      skip: (page - 1) * PAGE_SIZE,
+      take: PAGE_SIZE + 1,
+    }),
+    db.jobItem.groupBy({ by: ["status"], where: { jobId: job.id }, _count: { _all: true } }),
+  ]);
+
+  const counts: Record<string, number> = {};
+  for (const row of grouped) counts[row.status] = row._count._all;
+
   return json({
-    job: {
-      id: job.id,
-      status: job.status,
-      totalItems: job.totalItems,
-      processedCount: job.processedCount,
-      errorMessage: job.errorMessage,
-    },
+    job: jobSummary,
     selectionText: selectionSummary(job),
+    items: rows.slice(0, PAGE_SIZE).map(toPreviewItem),
+    counts,
+    page,
+    hasNext: rows.length > PAGE_SIZE,
+    itemStatus,
   });
 }
 
@@ -190,7 +311,7 @@ export default function EditJob() {
     return <StagingProgress total={data.job.totalItems} processed={data.job.processedCount} />;
   }
   if (data.job.status === "staged") {
-    return <StagedSummary total={data.job.totalItems} jobId={data.job.id} />;
+    return <Preview data={data} />;
   }
   return <Builder selectionText={data.selectionText} />;
 }
@@ -213,35 +334,147 @@ function StagingProgress({ total, processed }: { total: number; processed: numbe
   );
 }
 
-function StagedSummary({ total, jobId }: { total: number; jobId: string }) {
+function outcomeBadge(status: string) {
+  if (status === "pending") return <Badge tone="attention">Will change</Badge>;
+  if (status === "invalid") return <Badge tone="critical">Invalid</Badge>;
+  if (status === "skipped_unchanged") return <Badge>Unchanged</Badge>;
+  return <Badge>{status}</Badge>;
+}
+
+function Preview({ data }: { data: SerializeFrom<typeof loader> }) {
   const submit = useSubmit();
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const navigation = useNavigation();
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const busy = navigation.state !== "idle";
+
+  const willChange = data.counts.pending ?? 0;
+  const unchanged = data.counts.skipped_unchanged ?? 0;
+  const invalid = data.counts.invalid ?? 0;
+
+  const setParam = useCallback(
+    (key: string, value: string | null) => {
+      const next = new URLSearchParams(searchParams);
+      if (value) next.set(key, value);
+      else next.delete(key);
+      if (key === "itemStatus") next.delete("page");
+      navigate(`?${next.toString()}`);
+    },
+    [searchParams, navigate],
+  );
+
   return (
-    <Page title="Preview changes" subtitle={`${total} products staged`}>
-      <Card>
-        <BlockStack gap="300">
-          <Text as="p">The preview is ready. Review the changes, then apply them.</Text>
-          <InlineStack gap="300">
-            <Button
-              variant="primary"
-              loading={busy}
-              onClick={() => submit({ intent: "apply" }, { method: "post" })}
-            >
-              Apply
-            </Button>
-            <Button
-              tone="critical"
-              onClick={() => submit({ intent: "discard" }, { method: "post" })}
-            >
-              Discard
-            </Button>
-          </InlineStack>
-          <Text as="span" tone="subdued">
-            Job {jobId}
+    <Page
+      title="Preview changes"
+      subtitle={`${data.job.totalItems} products staged`}
+      primaryAction={{
+        content: `Apply to ${willChange} products`,
+        disabled: willChange === 0 || busy,
+        onAction: () => setConfirmOpen(true),
+      }}
+      secondaryActions={[
+        { content: "Discard", onAction: () => submit({ intent: "discard" }, { method: "post" }) },
+      ]}
+    >
+      <Layout>
+        <Layout.Section>
+          <BlockStack gap="400">
+            <Banner tone="info">
+              {willChange} products will change, {unchanged} skipped (already match), {invalid}{" "}
+              invalid.
+            </Banner>
+
+            <Card padding="0">
+              <Box padding="300">
+                <ChoiceList
+                  title="Filter by outcome"
+                  titleHidden
+                  choices={[
+                    { label: "All", value: "all" },
+                    { label: "Will change", value: "pending" },
+                    { label: "Unchanged", value: "skipped_unchanged" },
+                    { label: "Invalid", value: "invalid" },
+                  ]}
+                  selected={[data.itemStatus ?? "all"]}
+                  onChange={(value) => setParam("itemStatus", value[0] === "all" ? null : value[0])}
+                />
+              </Box>
+              <IndexTable
+                selectable={false}
+                resourceName={{ singular: "product", plural: "products" }}
+                itemCount={data.items.length}
+                headings={[{ title: "Product" }, { title: "Changes" }, { title: "Outcome" }]}
+              >
+                {data.items.map((item, index) => (
+                  <IndexTable.Row id={item.id} key={item.id} position={index}>
+                    <IndexTable.Cell>
+                      <Text as="span" fontWeight="semibold">
+                        {item.productTitle}
+                      </Text>
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>
+                      <BlockStack gap="050">
+                        {item.changes.map((change) => (
+                          <Text as="span" key={change.label}>
+                            {change.label}:{" "}
+                            <Text as="span" tone="subdued">
+                              {change.from}
+                            </Text>
+                            <Text as="span" visuallyHidden>
+                              {" "}
+                              was, becomes{" "}
+                            </Text>{" "}
+                            → {change.to}
+                          </Text>
+                        ))}
+                        {item.message ? (
+                          <Text as="span" tone="critical">
+                            {item.message}
+                          </Text>
+                        ) : null}
+                      </BlockStack>
+                    </IndexTable.Cell>
+                    <IndexTable.Cell>{outcomeBadge(item.status)}</IndexTable.Cell>
+                  </IndexTable.Row>
+                ))}
+              </IndexTable>
+              <Box padding="300">
+                <InlineStack align="center">
+                  <Pagination
+                    hasPrevious={data.page > 1}
+                    onPrevious={() => setParam("page", String(data.page - 1))}
+                    hasNext={data.hasNext}
+                    onNext={() => setParam("page", String(data.page + 1))}
+                  />
+                </InlineStack>
+              </Box>
+            </Card>
+          </BlockStack>
+        </Layout.Section>
+      </Layout>
+
+      <Modal
+        open={confirmOpen}
+        onClose={() => setConfirmOpen(false)}
+        title="Apply changes"
+        primaryAction={{
+          content: `Apply to ${willChange} products`,
+          loading: busy,
+          onAction: () => {
+            setConfirmOpen(false);
+            submit({ intent: "apply" }, { method: "post" });
+          },
+        }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setConfirmOpen(false) }]}
+      >
+        <Modal.Section>
+          <Text as="p">
+            This will update {willChange} products in your store as a background job. You can undo
+            the job afterward.
           </Text>
-        </BlockStack>
-      </Card>
+        </Modal.Section>
+      </Modal>
     </Page>
   );
 }
