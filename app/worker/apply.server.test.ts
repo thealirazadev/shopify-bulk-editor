@@ -201,3 +201,73 @@ describe("runApply", () => {
     expect(finished?.successCount).toBe(2);
   });
 });
+
+describe("runApply (undo)", () => {
+  it("restores prior values and marks the original job undone", async () => {
+    const original = await db.job.create({
+      data: {
+        shop: "test.myshopify.com",
+        type: "edit",
+        status: "completed",
+        totalItems: 1,
+        successCount: 1,
+      },
+    });
+    const undoJob = await db.job.create({
+      data: {
+        shop: "test.myshopify.com",
+        type: "undo",
+        status: "queued",
+        undoOfJobId: original.id,
+        totalItems: 1,
+      },
+    });
+    // Undo item: restore price 10.00 (before), stale-check against 11.00 (after).
+    const undoItem = await db.jobItem.create({
+      data: {
+        jobId: undoJob.id,
+        productGid: "gid://p/30",
+        productTitle: "Undo me",
+        status: "pending",
+        beforeJson: JSON.stringify({ variants: [{ id: "gid://v/30", price: "11.00" }] }),
+        afterJson: JSON.stringify({ variants: [{ id: "gid://v/30", price: "10.00" }] }),
+      },
+    });
+
+    const admin = makeAdmin({
+      "gid://p/30": { status: "ACTIVE", variants: [{ id: "gid://v/30", price: "11.00" }] },
+    });
+
+    await runApply(undoJob, admin, createThrottler());
+
+    expect((await db.jobItem.findUnique({ where: { id: undoItem.id } }))?.status).toBe("applied");
+    const originalAfter = await db.job.findUnique({ where: { id: original.id } });
+    expect(originalAfter?.undoneByJobId).toBe(undoJob.id);
+  });
+
+  it("skips an undo item whose live value changed since the original apply", async () => {
+    const undoJob = await db.job.create({
+      data: { shop: "test.myshopify.com", type: "undo", status: "queued", totalItems: 1 },
+    });
+    const undoItem = await db.jobItem.create({
+      data: {
+        jobId: undoJob.id,
+        productGid: "gid://p/31",
+        productTitle: "Changed",
+        status: "pending",
+        beforeJson: JSON.stringify({ variants: [{ id: "gid://v/31", price: "11.00" }] }),
+        afterJson: JSON.stringify({ variants: [{ id: "gid://v/31", price: "10.00" }] }),
+      },
+    });
+    // Live price is neither the original after we set (11.00): a manual change.
+    const admin = makeAdmin({
+      "gid://p/31": { status: "ACTIVE", variants: [{ id: "gid://v/31", price: "9.00" }] },
+    });
+
+    await runApply(undoJob, admin, createThrottler());
+
+    expect((await db.jobItem.findUnique({ where: { id: undoItem.id } }))?.status).toBe(
+      "skipped_stale",
+    );
+  });
+});

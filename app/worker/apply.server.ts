@@ -303,5 +303,14 @@ export async function runApply(job: Job, admin: WorkerAdmin, throttle: Throttler
   }
 
   await finalize(job.id);
+
+  // A completed undo disables a second undo of its original job.
+  if (job.type === "undo" && job.undoOfJobId) {
+    await db.job.updateMany({
+      where: { id: job.undoOfJobId, undoneByJobId: null },
+      data: { undoneByJobId: job.id },
+    });
+  }
+
   logger.info("apply job finished", { shop: job.shop, jobId: job.id });
 }

@@ -1,11 +1,19 @@
-import type { LoaderFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
-import { useLoaderData, useNavigate, useRevalidator, useSearchParams } from "@remix-run/react";
+import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
+import {
+  useLoaderData,
+  useNavigate,
+  useNavigation,
+  useRevalidator,
+  useSearchParams,
+  useSubmit,
+} from "@remix-run/react";
 import {
   Badge,
   Banner,
   BlockStack,
   Box,
+  Button,
   Card,
   ChoiceList,
   IndexTable,
@@ -16,15 +24,21 @@ import {
   Pagination,
   ProgressBar,
   Text,
+  Tooltip,
 } from "@shopify/polaris";
 import type { BadgeProps } from "@shopify/polaris";
 import { useEffect } from "react";
 
 import db from "~/db.server";
+import { apiError, newRequestId } from "~/lib/errors";
+import { computeInverseItems } from "~/lib/undo";
+import { logger } from "~/lib/logger.server";
 import { authenticate } from "~/shopify.server";
 
 const PAGE_SIZE = 50;
 const ACTIVE_STATUSES = ["staging", "queued", "running"];
+const UNDOABLE_TYPES = ["edit", "csv_import"];
+const APPLIED_STATUSES = ["completed", "completed_with_errors"];
 
 const TYPE_LABEL: Record<string, string> = {
   edit: "Bulk edit",
@@ -32,6 +46,16 @@ const TYPE_LABEL: Record<string, string> = {
   export: "Export",
   undo: "Undo",
 };
+
+// The shop's most recent applied edit/import job id, for undo eligibility.
+async function latestUndoableJobId(shop: string): Promise<string | null> {
+  const latest = await db.job.findFirst({
+    where: { shop, type: { in: UNDOABLE_TYPES }, status: { in: APPLIED_STATUSES } },
+    orderBy: { finishedAt: "desc" },
+    select: { id: true },
+  });
+  return latest?.id ?? null;
+}
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
@@ -59,6 +83,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const counts: Record<string, number> = {};
   for (const row of grouped) counts[row.status] = row._count._all;
 
+  const isUndoableType = UNDOABLE_TYPES.includes(job.type);
+  const isApplied = APPLIED_STATUSES.includes(job.status);
+  const isLatest = isApplied && (await latestUndoableJobId(session.shop)) === job.id;
+  let canUndo = false;
+  let undoReason: string | null = null;
+  if (isUndoableType) {
+    if (job.undoneByJobId) {
+      undoReason = "This job was already undone.";
+    } else if (isApplied && isLatest) {
+      canUndo = true;
+    } else if (isApplied) {
+      undoReason = "Only the most recent applied job can be undone.";
+    } else {
+      undoReason = "Only a completed job can be undone.";
+    }
+  }
+
   return json({
     job: {
       id: job.id,
@@ -73,6 +114,9 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       createdAt: job.createdAt.toISOString(),
     },
     downloadReady: job.type === "export" && Boolean(job.resultPath),
+    isUndoableType,
+    canUndo,
+    undoReason,
     items: rows.slice(0, PAGE_SIZE).map((row) => ({
       id: row.id,
       productTitle: row.productTitle,
@@ -85,6 +129,92 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     hasNext: rows.length > PAGE_SIZE,
     itemStatus,
   });
+}
+
+export async function action({ request, params }: ActionFunctionArgs) {
+  const { session } = await authenticate.admin(request);
+  const requestId = newRequestId();
+  const formData = await request.formData();
+  const intent = String(formData.get("intent") ?? "");
+  const job = await db.job.findFirst({ where: { id: params.id, shop: session.shop } });
+
+  if (!job) {
+    return json(
+      { error: apiError("NOT_FOUND", "Job not found.", requestId).error },
+      { status: 404 },
+    );
+  }
+
+  if (intent !== "undo") {
+    return json(
+      { error: apiError("INVALID_INPUT", "Unknown action.", requestId).error },
+      { status: 400 },
+    );
+  }
+
+  if (!UNDOABLE_TYPES.includes(job.type) || !APPLIED_STATUSES.includes(job.status)) {
+    return json(
+      { error: apiError("CONFLICT", "This job cannot be undone.", requestId).error },
+      { status: 409 },
+    );
+  }
+  if (job.undoneByJobId) {
+    return json(
+      { error: apiError("CONFLICT", "This job was already undone.", requestId).error },
+      { status: 409 },
+    );
+  }
+  if ((await latestUndoableJobId(session.shop)) !== job.id) {
+    return json(
+      { error: apiError("CONFLICT", "A newer job has been applied.", requestId).error },
+      { status: 409 },
+    );
+  }
+
+  const appliedItems = await db.jobItem.findMany({
+    where: { jobId: job.id, status: "applied" },
+  });
+  const undoItems = computeInverseItems(appliedItems);
+  if (undoItems.length === 0) {
+    return json(
+      { error: apiError("CONFLICT", "There is nothing to undo.", requestId).error },
+      { status: 409 },
+    );
+  }
+
+  try {
+    const undoJob = await db.job.create({
+      data: {
+        shop: session.shop,
+        type: "undo",
+        status: "staged",
+        undoOfJobId: job.id,
+        totalItems: undoItems.length,
+      },
+    });
+    await db.jobItem.createMany({
+      data: undoItems.map((undoItem) => ({
+        jobId: undoJob.id,
+        productGid: undoItem.productGid,
+        productTitle: undoItem.productTitle,
+        status: "pending",
+        beforeJson: JSON.stringify(undoItem.before),
+        afterJson: JSON.stringify(undoItem.after),
+      })),
+    });
+    return redirect(`/app/edits/${undoJob.id}`);
+  } catch (error) {
+    // undoOfJobId is unique, so a concurrent undo attempt lands here.
+    logger.warn("undo creation conflict", {
+      shop: session.shop,
+      jobId: job.id,
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return json(
+      { error: apiError("CONFLICT", "This job is already being undone.", requestId).error },
+      { status: 409 },
+    );
+  }
 }
 
 const STATUS_TONE: Record<string, BadgeProps["tone"]> = {
@@ -126,8 +256,11 @@ export default function JobDetail() {
   const data = useLoaderData<typeof loader>();
   const revalidator = useRevalidator();
   const navigate = useNavigate();
+  const submit = useSubmit();
+  const navigation = useNavigation();
   const [searchParams] = useSearchParams();
   const active = ACTIVE_STATUSES.includes(data.job.status);
+  const busy = navigation.state !== "idle";
 
   useEffect(() => {
     if (!active) return undefined;
@@ -185,6 +318,23 @@ export default function JobDetail() {
                   <Stat label="Failed" value={data.job.failedCount} />
                   <Stat label="Skipped" value={data.job.skippedCount} />
                 </InlineGrid>
+
+                {data.isUndoableType ? (
+                  <InlineStack>
+                    {data.canUndo ? (
+                      <Button
+                        loading={busy}
+                        onClick={() => submit({ intent: "undo" }, { method: "post" })}
+                      >
+                        Undo this job
+                      </Button>
+                    ) : (
+                      <Tooltip content={data.undoReason ?? "This job cannot be undone."}>
+                        <Button disabled>Undo this job</Button>
+                      </Tooltip>
+                    )}
+                  </InlineStack>
+                ) : null}
               </BlockStack>
             </Card>
 
