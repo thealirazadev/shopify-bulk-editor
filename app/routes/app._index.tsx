@@ -1,5 +1,5 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
-import { json } from "@remix-run/node";
+import { json, redirect } from "@remix-run/node";
 import {
   useFetcher,
   useNavigate,
@@ -215,6 +215,21 @@ export async function action({ request }: ActionFunctionArgs) {
       const savedFilterId = String(formData.get("savedFilterId") ?? "");
       await db.savedFilter.deleteMany({ where: { id: savedFilterId, shop: session.shop } });
       return json({ ok: true as const });
+    }
+
+    if (intent === "startExport") {
+      const filter = filterFromParams(
+        new URLSearchParams([...formData.entries()].map(([key, value]) => [key, String(value)])),
+      );
+      const exportJob = await db.job.create({
+        data: {
+          shop: session.shop,
+          type: "export",
+          status: "queued",
+          selectionJson: JSON.stringify({ mode: "filter", filter }),
+        },
+      });
+      return redirect(`/app/jobs/${exportJob.id}`);
     }
 
     return json(
@@ -466,6 +481,16 @@ export default function ProductsIndex() {
     );
   }, [allResourcesSelected, data.filter, selectedResources, submit]);
 
+  const startExport = useCallback(() => {
+    const params: Record<string, string> = { intent: "startExport" };
+    if (data.filter.status) params.status = data.filter.status;
+    if (data.filter.collectionId) params.collectionId = data.filter.collectionId;
+    if (data.filter.vendor) params.vendor = data.filter.vendor;
+    if (data.filter.tag) params.tag = data.filter.tag;
+    if (data.filter.title) params.title = data.filter.title;
+    submit(params, { method: "post" });
+  }, [data.filter, submit]);
+
   return (
     <Page
       title="Products"
@@ -474,7 +499,10 @@ export default function ProductsIndex() {
         disabled: selectedCount === 0,
         onAction: startBulkEdit,
       }}
-      secondaryActions={[{ content: "Import CSV", url: "/app/import" }]}
+      secondaryActions={[
+        { content: "Export CSV", onAction: startExport },
+        { content: "Import CSV", url: "/app/import" },
+      ]}
     >
       <Layout>
         <Layout.Section>

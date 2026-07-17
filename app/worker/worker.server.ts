@@ -1,6 +1,7 @@
 import type { Job } from "@prisma/client";
 
 import { runApply } from "./apply.server";
+import { runExportStart } from "./export.server";
 import { runStaging } from "./stage.server";
 import { createThrottler } from "./throttle.server";
 import type { WorkerAdmin } from "./throttle.server";
@@ -31,10 +32,16 @@ async function claimNextJob(): Promise<Job | null> {
 
   const candidate = await db.job.findFirst({
     where: {
-      type: { in: ["edit", "csv_import", "undo"] },
       OR: [
+        // Fresh staging/queued work for any type (export only ever starts here).
         { status: { in: ["staging", "queued"] }, heartbeatAt: null },
-        { status: { in: ["staging", "running"] }, heartbeatAt: { lt: staleBefore } },
+        // Crash recovery for apply/staging jobs; running exports finish via
+        // webhook or the export poller, never by re-claiming.
+        {
+          type: { in: ["edit", "csv_import", "undo"] },
+          status: { in: ["staging", "running"] },
+          heartbeatAt: { lt: staleBefore },
+        },
       ],
     },
     orderBy: { createdAt: "asc" },
@@ -62,6 +69,10 @@ async function processJob(job: Job): Promise<void> {
 
   if (job.status === "staging") {
     await runStaging(job, admin, throttle);
+    return;
+  }
+  if (job.type === "export") {
+    await runExportStart(job, admin, throttle);
     return;
   }
   await runApply(job, admin, throttle);
