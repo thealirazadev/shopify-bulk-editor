@@ -20,6 +20,7 @@ import {
   InlineGrid,
   InlineStack,
   Layout,
+  Modal,
   Page,
   Pagination,
   ProgressBar,
@@ -27,7 +28,7 @@ import {
   Tooltip,
 } from "@shopify/polaris";
 import type { BadgeProps } from "@shopify/polaris";
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 
 import db from "~/db.server";
 import { apiError, newRequestId } from "~/lib/errors";
@@ -117,6 +118,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     isUndoableType,
     canUndo,
     undoReason,
+    canCancel: ["queued", "running"].includes(job.status),
     items: rows.slice(0, PAGE_SIZE).map((row) => ({
       id: row.id,
       productTitle: row.productTitle,
@@ -143,6 +145,29 @@ export async function action({ request, params }: ActionFunctionArgs) {
       { error: apiError("NOT_FOUND", "Job not found.", requestId).error },
       { status: 404 },
     );
+  }
+
+  if (intent === "cancel") {
+    const counts = {
+      successCount: await db.jobItem.count({ where: { jobId: job.id, status: "applied" } }),
+      failedCount: await db.jobItem.count({ where: { jobId: job.id, status: "failed" } }),
+      skippedCount: await db.jobItem.count({
+        where: {
+          jobId: job.id,
+          status: { in: ["skipped_stale", "skipped_unchanged", "invalid"] },
+        },
+      }),
+    };
+    await db.job.updateMany({
+      where: { id: job.id, shop: session.shop, status: { in: ["queued", "running"] } },
+      data: {
+        status: "canceled",
+        finishedAt: new Date(),
+        processedCount: counts.successCount + counts.failedCount + counts.skippedCount,
+        ...counts,
+      },
+    });
+    return json({ ok: true });
   }
 
   if (intent !== "undo") {
@@ -259,6 +284,7 @@ export default function JobDetail() {
   const submit = useSubmit();
   const navigation = useNavigation();
   const [searchParams] = useSearchParams();
+  const [cancelOpen, setCancelOpen] = useState(false);
   const active = ACTIVE_STATUSES.includes(data.job.status);
   const busy = navigation.state !== "idle";
 
@@ -319,20 +345,26 @@ export default function JobDetail() {
                   <Stat label="Skipped" value={data.job.skippedCount} />
                 </InlineGrid>
 
-                {data.isUndoableType ? (
-                  <InlineStack>
-                    {data.canUndo ? (
+                {data.isUndoableType || data.canCancel ? (
+                  <InlineStack gap="300">
+                    {data.canCancel ? (
+                      <Button tone="critical" onClick={() => setCancelOpen(true)}>
+                        Cancel
+                      </Button>
+                    ) : null}
+                    {data.isUndoableType && data.canUndo ? (
                       <Button
                         loading={busy}
                         onClick={() => submit({ intent: "undo" }, { method: "post" })}
                       >
                         Undo this job
                       </Button>
-                    ) : (
+                    ) : null}
+                    {data.isUndoableType && !data.canUndo ? (
                       <Tooltip content={data.undoReason ?? "This job cannot be undone."}>
                         <Button disabled>Undo this job</Button>
                       </Tooltip>
-                    )}
+                    ) : null}
                   </InlineStack>
                 ) : null}
               </BlockStack>
@@ -395,6 +427,29 @@ export default function JobDetail() {
           </BlockStack>
         </Layout.Section>
       </Layout>
+
+      <Modal
+        open={cancelOpen}
+        onClose={() => setCancelOpen(false)}
+        title="Cancel this job?"
+        primaryAction={{
+          content: "Cancel job",
+          destructive: true,
+          loading: busy,
+          onAction: () => {
+            setCancelOpen(false);
+            submit({ intent: "cancel" }, { method: "post" });
+          },
+        }}
+        secondaryActions={[{ content: "Keep running", onAction: () => setCancelOpen(false) }]}
+      >
+        <Modal.Section>
+          <Text as="p">
+            The job stops after the current product. Products already updated stay updated and
+            remain undoable.
+          </Text>
+        </Modal.Section>
+      </Modal>
     </Page>
   );
 }

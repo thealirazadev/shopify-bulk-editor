@@ -285,6 +285,11 @@ export async function runApply(job: Job, admin: WorkerAdmin, throttle: Throttler
   for (const item of pending) {
     const current = await db.job.findUnique({ where: { id: job.id }, select: { status: true } });
     if (!current || current.status !== "running") {
+      // Canceled or interrupted: record final counts without changing status.
+      await db.job.updateMany({
+        where: { id: job.id, status: "canceled" },
+        data: await computeCounts(job.id),
+      });
       logger.info("apply loop stopped early", { shop: job.shop, jobId: job.id });
       return;
     }
