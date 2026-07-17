@@ -4,6 +4,16 @@ Running log of what is done, what is in flight, and decisions worth remembering.
 
 ## Completed
 
+- 2026-07-18 — Phase 2 (bulk engine) complete and green. Pure logic: edit-set validation + price math
+  (half-up rounding, negative-flag, tag deltas, unchanged detection), throttle pacing, CSV export
+  serialization + injection guard, CSV import row/column validation. Worker: DB-backed loop with
+  claiming/heartbeat/crash-recovery, cost-aware throttled apply with per-item stale-skip + partial
+  failure + live counts, staging (edit + import) with before-value snapshots, bulk-query export with
+  webhook + 15s polling completion (guarded transition), JSONL->CSV + authenticated download route.
+  UI: edit-set builder, before/after preview with apply/discard + confirm modal, job progress/detail
+  with polling + per-item results, CSV import upload with dry-run preview + duplicate-file warning.
+  Integration tests (mocked admin + throwaway SQLite): apply outcomes/resume, staging edit+import,
+  export completion/idempotency/failure. Verification: typecheck, lint, 61 tests, build all pass.
 - 2026-07-18 — Phase 1 (foundation and product browser) complete and green: scaffold, eslint/prettier,
   Prisma schema (Session, SavedFilter, Job, JobItem) + init migration, Shopify auth + OAuth routes,
   structured logger + shared error format, embedded shell with App Bridge nav + error boundary, webhook
