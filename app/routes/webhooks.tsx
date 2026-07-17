@@ -5,6 +5,7 @@ import db from "~/db.server";
 import { logger } from "~/lib/logger.server";
 import { actionForTopic } from "~/lib/webhook-topics";
 import { authenticate } from "~/shopify.server";
+import { completeExportByGid } from "~/worker/export.server";
 
 const ACTIVE_JOB_STATUSES = ["queued", "running", "staging", "staged", "draft"];
 
@@ -39,9 +40,11 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       case "bulk-finish": {
-        // Export completion is wired up in Phase 2 (export.server). Until then
-        // acknowledge so Shopify does not retry.
-        logger.info("bulk operation finished webhook acknowledged", { shop, topic });
+        const gid = (payload as { admin_graphql_api_id?: string }).admin_graphql_api_id;
+        if (gid) {
+          await completeExportByGid(shop, gid);
+        }
+        logger.info("bulk operation finished webhook handled", { shop, topic });
         break;
       }
 

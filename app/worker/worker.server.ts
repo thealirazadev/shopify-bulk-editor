@@ -1,7 +1,7 @@
 import type { Job } from "@prisma/client";
 
 import { runApply } from "./apply.server";
-import { runExportStart } from "./export.server";
+import { pollRunningExports, runExportStart } from "./export.server";
 import { runStaging } from "./stage.server";
 import { createThrottler } from "./throttle.server";
 import type { WorkerAdmin } from "./throttle.server";
@@ -12,6 +12,9 @@ import db from "~/db.server";
 
 const POLL_INTERVAL_MS = 1000;
 const HEARTBEAT_STALE_MS = 2 * 60 * 1000;
+const EXPORT_POLL_MS = 15 * 1000;
+
+let lastExportPoll = 0;
 
 // Module-level singleton so Vite HMR in dev does not spawn a second loop, the
 // same guard pattern as the Prisma client.
@@ -79,6 +82,18 @@ async function processJob(job: Job): Promise<void> {
 }
 
 async function tick(): Promise<void> {
+  const now = Date.now();
+  if (now - lastExportPoll >= EXPORT_POLL_MS) {
+    lastExportPoll = now;
+    try {
+      await pollRunningExports();
+    } catch (error) {
+      logger.error("export poll cycle failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   const job = await claimNextJob();
   if (!job) return;
 
