@@ -4,6 +4,14 @@ Running log of what is done, what is in flight, and decisions worth remembering.
 
 ## Completed
 
+- 2026-07-18 — Phase 4 (operational hardening) complete and green. Cancel queued/running jobs (guarded
+  transition to `canceled` with recomputed counts; the running worker stops at the next item boundary
+  and applied items stay applied/undoable) with a confirm modal. Worker cleanup cycle (every 10 min):
+  expire draft/staged jobs older than 24h to `discarded`, delete export files older than 7 days and
+  clear `resultPath` (download then returns a friendly 404). README updated to the implemented feature
+  set. Audited: product-write mutations exist only in `apply.server`; the only `queued` transition for
+  editable jobs is the guarded apply intent from `staged`. Booted the production build — Shopify config
+  loads, worker starts, `/` redirects to auth. 68 tests pass; typecheck/lint/build clean.
 - 2026-07-18 — Phase 3 (job history and undo) complete and green. Job history list (IndexTable, newest
   first, shop-scoped, paginated, status badges, row navigation). Undo: pure inverse computation swaps
   each applied item's before/after; undo job created directly in `staged` with pre-computed items and
