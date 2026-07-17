@@ -1,3 +1,5 @@
+import { rm } from "node:fs/promises";
+
 import type { Job } from "@prisma/client";
 
 import { runApply } from "./apply.server";
@@ -13,8 +15,12 @@ import db from "~/db.server";
 const POLL_INTERVAL_MS = 1000;
 const HEARTBEAT_STALE_MS = 2 * 60 * 1000;
 const EXPORT_POLL_MS = 15 * 1000;
+const CLEANUP_MS = 10 * 60 * 1000;
+const STALE_JOB_MS = 24 * 60 * 60 * 1000;
+const EXPORT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 let lastExportPoll = 0;
+let lastCleanup = 0;
 
 // Module-level singleton so Vite HMR in dev does not spawn a second loop, the
 // same guard pattern as the Prisma client.
@@ -81,6 +87,37 @@ async function processJob(job: Job): Promise<void> {
   await runApply(job, admin, throttle);
 }
 
+// Expire abandoned draft/staged jobs and delete export files past retention.
+async function cleanup(): Promise<void> {
+  const now = Date.now();
+
+  await db.job.updateMany({
+    where: { status: { in: ["draft", "staged"] }, createdAt: { lt: new Date(now - STALE_JOB_MS) } },
+    data: { status: "discarded", finishedAt: new Date() },
+  });
+
+  const expired = await db.job.findMany({
+    where: {
+      type: "export",
+      resultPath: { not: null },
+      finishedAt: { lt: new Date(now - EXPORT_RETENTION_MS) },
+    },
+  });
+  for (const job of expired) {
+    if (job.resultPath) {
+      try {
+        await rm(job.resultPath, { force: true });
+      } catch (error) {
+        logger.warn("export file cleanup failed", {
+          jobId: job.id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+    }
+    await db.job.update({ where: { id: job.id }, data: { resultPath: null } });
+  }
+}
+
 async function tick(): Promise<void> {
   const now = Date.now();
   if (now - lastExportPoll >= EXPORT_POLL_MS) {
@@ -89,6 +126,17 @@ async function tick(): Promise<void> {
       await pollRunningExports();
     } catch (error) {
       logger.error("export poll cycle failed", {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
+  if (now - lastCleanup >= CLEANUP_MS) {
+    lastCleanup = now;
+    try {
+      await cleanup();
+    } catch (error) {
+      logger.error("cleanup cycle failed", {
         error: error instanceof Error ? error.message : String(error),
       });
     }
