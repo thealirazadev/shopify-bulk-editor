@@ -271,3 +271,20 @@ describe("runApply (undo)", () => {
     );
   });
 });
+
+describe("runApply (cancel)", () => {
+  it("applies nothing when the job is already canceled", async () => {
+    const job = await db.job.create({
+      data: { shop: "test.myshopify.com", type: "edit", status: "canceled", totalItems: 1 },
+    });
+    const item = await seedPriceItem(job.id, "gid://p/40", "gid://v/40", "11.00");
+    const admin = makeAdmin({
+      "gid://p/40": { status: "ACTIVE", variants: [{ id: "gid://v/40", price: "10.00" }] },
+    });
+
+    await runApply(job, admin, createThrottler());
+
+    expect((await db.jobItem.findUnique({ where: { id: item.id } }))?.status).toBe("pending");
+    expect((await db.job.findUnique({ where: { id: job.id } }))?.status).toBe("canceled");
+  });
+});
