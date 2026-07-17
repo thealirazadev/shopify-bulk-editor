@@ -61,3 +61,44 @@ export function createThrottler() {
 }
 
 export type Throttler = ReturnType<typeof createThrottler>;
+
+// ---------------------------------------------------------------------------
+// Transport. A narrow admin-client interface so worker functions can be driven
+// by a mocked client in tests (docs/testing.md).
+
+export interface GraphQLBody {
+  data?: unknown;
+  errors?: { message: string }[];
+  extensions?: { cost?: CostExtension };
+}
+
+export interface WorkerAdmin {
+  graphql: (
+    query: string,
+    options?: { variables?: Record<string, unknown> },
+  ) => Promise<{ json: () => Promise<GraphQLBody> }>;
+}
+
+// Execute a GraphQL call, pace it from the last cost block, and return typed
+// data. Throws on transport-level GraphQL `errors` or a missing data payload;
+// per-item `userErrors` are inspected by the caller.
+export async function runGraphql<TData>(
+  admin: WorkerAdmin,
+  throttle: Throttler,
+  op: string,
+  query: string,
+  variables?: Record<string, unknown>,
+): Promise<TData> {
+  await throttle.beforeCall(op);
+  const response = await admin.graphql(query, variables ? { variables } : undefined);
+  const body = await response.json();
+  throttle.record(op, body.extensions?.cost);
+
+  if (body.errors && body.errors.length > 0) {
+    throw new Error(body.errors.map((err) => err.message).join("; "));
+  }
+  if (body.data == null) {
+    throw new Error("GraphQL response contained no data.");
+  }
+  return body.data as TData;
+}
