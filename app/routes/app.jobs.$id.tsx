@@ -72,6 +72,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       errorMessage: job.errorMessage,
       createdAt: job.createdAt.toISOString(),
     },
+    downloadReady: job.type === "export" && Boolean(job.resultPath),
     items: rows.slice(0, PAGE_SIZE).map((row) => ({
       id: row.id,
       productTitle: row.productTitle,
@@ -153,6 +154,11 @@ export default function JobDetail() {
     <Page
       title={title}
       titleMetadata={<Badge tone={STATUS_TONE[data.job.status]}>{data.job.status}</Badge>}
+      primaryAction={
+        data.downloadReady
+          ? { content: "Download CSV", url: `/app/jobs/${data.job.id}/download`, external: true }
+          : undefined
+      }
     >
       <Layout>
         <Layout.Section>
