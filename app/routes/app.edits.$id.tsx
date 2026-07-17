@@ -150,6 +150,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       page,
       hasNext: false,
       itemStatus,
+      duplicateOfJobId: null as string | null,
     });
   }
 
@@ -167,6 +168,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const counts: Record<string, number> = {};
   for (const row of grouped) counts[row.status] = row._count._all;
 
+  // Warn when this import's file was already applied for this shop.
+  let duplicateOfJobId: string | null = null;
+  if (job.type === "csv_import" && job.fileHash) {
+    const duplicate = await db.job.findFirst({
+      where: {
+        shop: session.shop,
+        type: "csv_import",
+        fileHash: job.fileHash,
+        status: { in: ["completed", "completed_with_errors"] },
+        id: { not: job.id },
+      },
+      orderBy: { finishedAt: "desc" },
+      select: { id: true },
+    });
+    duplicateOfJobId = duplicate?.id ?? null;
+  }
+
   return json({
     job: jobSummary,
     selectionText: selectionSummary(job),
@@ -175,6 +193,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     page,
     hasNext: rows.length > PAGE_SIZE,
     itemStatus,
+    duplicateOfJobId,
   });
 }
 
@@ -380,6 +399,15 @@ function Preview({ data }: { data: SerializeFrom<typeof loader> }) {
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
+            {data.duplicateOfJobId ? (
+              <Banner tone="warning" title="This file was already imported">
+                <p>
+                  A file with the same contents was applied before. Re-applying will not compound
+                  changes; rows that already match are skipped.
+                </p>
+              </Banner>
+            ) : null}
+
             <Banner tone="info">
               {willChange} products will change, {unchanged} skipped (already match), {invalid}{" "}
               invalid.

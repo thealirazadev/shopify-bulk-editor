@@ -5,7 +5,7 @@ import type { Throttler, WorkerAdmin } from "./throttle.server";
 
 import db from "~/db.server";
 import { computeItem, validateEditSet } from "~/lib/edit-set";
-import type { EditSet, ItemComputation, ProductState } from "~/lib/edit-set";
+import type { EditSet, ItemComputation, ProductState, Snapshot } from "~/lib/edit-set";
 import { compileFilter } from "~/lib/filters";
 import { JOB_ITEM_CAP } from "~/lib/jobs";
 import type { Selection } from "~/lib/jobs";
@@ -135,9 +135,88 @@ async function fetchTargets(
   return results;
 }
 
-// Stage an edit job: snapshot before-values, resolve absolute after-values,
-// and write one JobItem per targeted product.
+// Live values for the fields an import row targets, used as the before-snapshot.
+function buildImportBefore(product: StagedProduct, after: Snapshot): Snapshot {
+  const before: Snapshot = {};
+  if (after.variants) {
+    const liveById = new Map(product.variants.map((variant) => [variant.id, variant.price]));
+    before.variants = after.variants.map((variant) => ({
+      id: variant.id,
+      price: liveById.get(variant.id) ?? "0.00",
+    }));
+  }
+  if (after.status !== undefined) before.status = product.status;
+  if (after.tags) before.tags = { list: product.tags, delta: [] };
+  return before;
+}
+
+function importUnchanged(before: Snapshot, after: Snapshot): boolean {
+  if (after.variants && before.variants) {
+    const liveById = new Map(before.variants.map((variant) => [variant.id, variant.price]));
+    for (const variant of after.variants) {
+      if (Number(liveById.get(variant.id)) !== Number(variant.price)) return false;
+    }
+  }
+  if (after.status !== undefined && before.status !== after.status) return false;
+  if (after.tags && before.tags) {
+    const liveSet = [...before.tags.list].sort().join(",");
+    const nextSet = [...after.tags.list].sort().join(",");
+    if (liveSet !== nextSet) return false;
+  }
+  return true;
+}
+
+// Stage a CSV import: its JobItems already carry the absolute after-values from
+// the file; fetch live values for the before-snapshot and mark unchanged rows.
+async function runImportStaging(job: Job, admin: WorkerAdmin, throttle: Throttler): Promise<void> {
+  const items = await db.jobItem.findMany({ where: { jobId: job.id, status: "pending" } });
+  const gids = [...new Set(items.map((item) => item.productGid))];
+  const live = new Map<string, StagedProduct>();
+
+  for (const ids of chunk(gids, ID_CHUNK)) {
+    const data = await runGraphql<StageNodesData>(admin, throttle, "stage_nodes", STAGE_BY_IDS, {
+      ids,
+      ns: "app",
+      key: "unused",
+      wantMetafield: false,
+    });
+    for (const node of data.nodes) {
+      if (node) live.set(node.id, toStaged(node));
+    }
+  }
+
+  for (const item of items) {
+    const after = JSON.parse(item.afterJson ?? "{}") as Snapshot;
+    const product = live.get(item.productGid);
+    if (!product) {
+      await db.jobItem.update({
+        where: { id: item.id },
+        data: { status: "invalid", message: "Product not found in store." },
+      });
+      continue;
+    }
+    const before = buildImportBefore(product, after);
+    const status = importUnchanged(before, after) ? "skipped_unchanged" : "pending";
+    await db.jobItem.update({
+      where: { id: item.id },
+      data: { beforeJson: JSON.stringify(before), status },
+    });
+  }
+
+  const total = await db.jobItem.count({ where: { jobId: job.id } });
+  await db.job.updateMany({
+    where: { id: job.id, status: "staging" },
+    data: { status: "staged", totalItems: total, heartbeatAt: new Date() },
+  });
+  logger.info("staged import job", { shop: job.shop, jobId: job.id, totalItems: total });
+}
+
+// Stage a job by snapshotting before-values and resolving absolute after-values.
 export async function runStaging(job: Job, admin: WorkerAdmin, throttle: Throttler): Promise<void> {
+  if (job.type === "csv_import") {
+    await runImportStaging(job, admin, throttle);
+    return;
+  }
   if (job.type !== "edit") {
     throw new Error(`Staging not implemented for job type ${job.type}`);
   }
