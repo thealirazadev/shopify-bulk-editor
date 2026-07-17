@@ -1,3 +1,4 @@
+import "./lib/env.server";
 import { PrismaSessionStorage } from "@shopify/shopify-app-session-storage-prisma";
 import {
   ApiVersion,
