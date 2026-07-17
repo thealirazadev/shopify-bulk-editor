@@ -1,0 +1,203 @@
+import type { PrismaClient } from "@prisma/client";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+
+import { setupTestDb } from "./test-db";
+import { createThrottler } from "./throttle.server";
+import type { GraphQLBody, WorkerAdmin } from "./throttle.server";
+
+let db: PrismaClient;
+let cleanup: () => Promise<void>;
+let runApply: (typeof import("./apply.server"))["runApply"];
+
+interface LiveVariant {
+  id: string;
+  price: string;
+}
+interface LiveProduct {
+  status: string;
+  variants: LiveVariant[];
+  metafield?: { value: string } | null;
+}
+
+const COST = {
+  extensions: {
+    cost: {
+      actualQueryCost: 10,
+      throttleStatus: { maximumAvailable: 1000, currentlyAvailable: 1000, restoreRate: 100 },
+    },
+  },
+};
+
+// Mock admin whose ApplyRead reflects `live`, and whose status mutation fails
+// for the product id in `failStatusFor`.
+function makeAdmin(live: Record<string, LiveProduct>, failStatusFor?: string): WorkerAdmin {
+  return {
+    graphql: async (query, options) => {
+      const vars = (options?.variables ?? {}) as Record<string, unknown>;
+      let data: Record<string, unknown> = {};
+
+      if (query.includes("ApplyRead")) {
+        const product = live[String(vars.id)];
+        data = {
+          node: product
+            ? {
+                id: vars.id,
+                status: product.status,
+                variants: { edges: product.variants.map((variant) => ({ node: variant })) },
+                metafield: product.metafield ?? null,
+              }
+            : null,
+        };
+      } else if (query.includes("UpdateVariantPrices")) {
+        data = { productVariantsBulkUpdate: { productVariants: [], userErrors: [] } };
+      } else if (query.includes("UpdateStatus")) {
+        const input = vars.input as { id: string };
+        const userErrors =
+          failStatusFor && input.id === failStatusFor
+            ? [{ field: ["status"], message: "Status cannot be changed." }]
+            : [];
+        data = { productUpdate: { userErrors } };
+      } else if (query.includes("AddTags")) {
+        data = { tagsAdd: { userErrors: [] } };
+      } else if (query.includes("RemoveTags")) {
+        data = { tagsRemove: { userErrors: [] } };
+      } else if (query.includes("SetMetafield")) {
+        data = { metafieldsSet: { userErrors: [] } };
+      }
+
+      const body: GraphQLBody = { data, ...COST };
+      return { json: async () => body };
+    },
+  };
+}
+
+async function seedPriceItem(jobId: string, productGid: string, variantId: string, price: string) {
+  return db.jobItem.create({
+    data: {
+      jobId,
+      productGid,
+      productTitle: `Product ${productGid}`,
+      status: "pending",
+      beforeJson: JSON.stringify({ variants: [{ id: variantId, price: "10.00" }] }),
+      afterJson: JSON.stringify({ variants: [{ id: variantId, price }] }),
+    },
+  });
+}
+
+beforeAll(async () => {
+  const setup = await setupTestDb();
+  db = setup.db;
+  cleanup = setup.cleanup;
+  ({ runApply } = await import("./apply.server"));
+});
+
+afterAll(async () => {
+  await cleanup();
+});
+
+describe("runApply", () => {
+  it("applies, stale-skips, and fails items with correct counts", async () => {
+    const job = await db.job.create({
+      data: { shop: "test.myshopify.com", type: "edit", status: "queued", totalItems: 3 },
+    });
+
+    const applied = await seedPriceItem(job.id, "gid://p/1", "gid://v/1", "11.00");
+    const stale = await seedPriceItem(job.id, "gid://p/2", "gid://v/2", "11.00");
+    const failing = await db.jobItem.create({
+      data: {
+        jobId: job.id,
+        productGid: "gid://p/3",
+        productTitle: "Product 3",
+        status: "pending",
+        beforeJson: JSON.stringify({ status: "ACTIVE" }),
+        afterJson: JSON.stringify({ status: "DRAFT" }),
+      },
+    });
+
+    const admin = makeAdmin(
+      {
+        "gid://p/1": { status: "ACTIVE", variants: [{ id: "gid://v/1", price: "10.00" }] },
+        // live price differs from the staged before-value -> stale
+        "gid://p/2": { status: "ACTIVE", variants: [{ id: "gid://v/2", price: "12.00" }] },
+        "gid://p/3": { status: "ACTIVE", variants: [] },
+      },
+      "gid://p/3",
+    );
+
+    await runApply(job, admin, createThrottler());
+
+    expect((await db.jobItem.findUnique({ where: { id: applied.id } }))?.status).toBe("applied");
+    expect((await db.jobItem.findUnique({ where: { id: stale.id } }))?.status).toBe(
+      "skipped_stale",
+    );
+    expect((await db.jobItem.findUnique({ where: { id: failing.id } }))?.status).toBe("failed");
+
+    const finished = await db.job.findUnique({ where: { id: job.id } });
+    expect(finished?.status).toBe("completed_with_errors");
+    expect(finished?.successCount).toBe(1);
+    expect(finished?.failedCount).toBe(1);
+    expect(finished?.skippedCount).toBe(1);
+    expect(
+      (finished?.successCount ?? 0) + (finished?.failedCount ?? 0) + (finished?.skippedCount ?? 0),
+    ).toBe(3);
+  });
+
+  it("completes cleanly when every item succeeds", async () => {
+    const job = await db.job.create({
+      data: { shop: "test.myshopify.com", type: "edit", status: "queued", totalItems: 1 },
+    });
+    await seedPriceItem(job.id, "gid://p/10", "gid://v/10", "11.00");
+    const admin = makeAdmin({
+      "gid://p/10": { status: "ACTIVE", variants: [{ id: "gid://v/10", price: "10.00" }] },
+    });
+
+    await runApply(job, admin, createThrottler());
+
+    const finished = await db.job.findUnique({ where: { id: job.id } });
+    expect(finished?.status).toBe("completed");
+    expect(finished?.successCount).toBe(1);
+  });
+
+  it("resumes without re-processing already applied items", async () => {
+    const job = await db.job.create({
+      data: { shop: "test.myshopify.com", type: "edit", status: "running", totalItems: 2 },
+    });
+    const done = await db.jobItem.create({
+      data: {
+        jobId: job.id,
+        productGid: "gid://p/20",
+        productTitle: "Done",
+        status: "applied",
+        beforeJson: JSON.stringify({ variants: [{ id: "gid://v/20", price: "10.00" }] }),
+        afterJson: JSON.stringify({ variants: [{ id: "gid://v/20", price: "11.00" }] }),
+      },
+    });
+    const pending = await seedPriceItem(job.id, "gid://p/21", "gid://v/21", "11.00");
+
+    let readCount = 0;
+    const base = makeAdmin({
+      "gid://p/21": { status: "ACTIVE", variants: [{ id: "gid://v/21", price: "10.00" }] },
+    });
+    const admin: WorkerAdmin = {
+      graphql: async (query, options) => {
+        if (query.includes("ApplyRead")) {
+          const vars = (options?.variables ?? {}) as Record<string, unknown>;
+          readCount += 1;
+          // The already-applied product must never be re-read.
+          expect(vars.id).not.toBe("gid://p/20");
+        }
+        return base.graphql(query, options);
+      },
+    };
+
+    await runApply(job, admin, createThrottler());
+
+    expect(readCount).toBe(1);
+    expect((await db.jobItem.findUnique({ where: { id: done.id } }))?.status).toBe("applied");
+    expect((await db.jobItem.findUnique({ where: { id: pending.id } }))?.status).toBe("applied");
+
+    const finished = await db.job.findUnique({ where: { id: job.id } });
+    expect(finished?.status).toBe("completed");
+    expect(finished?.successCount).toBe(2);
+  });
+});
