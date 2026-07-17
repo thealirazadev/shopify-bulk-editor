@@ -1,0 +1,36 @@
+client_id = "00000000000000000000000000000000"
+name = "shopify-bulk-editor"
+application_url = "https://example-tunnel.trycloudflare.com"
+embedded = true
+
+[access_scopes]
+scopes = "read_products,write_products"
+
+[auth]
+redirect_urls = [
+  "https://example-tunnel.trycloudflare.com/auth/callback",
+  "https://example-tunnel.trycloudflare.com/auth/shopify/callback",
+  "https://example-tunnel.trycloudflare.com/api/auth/callback",
+]
+
+[webhooks]
+api_version = "2025-01"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/uninstalled"]
+  uri = "/webhooks"
+
+  [[webhooks.subscriptions]]
+  topics = ["app/scopes_update"]
+  uri = "/webhooks"
+
+  [[webhooks.subscriptions]]
+  topics = ["bulk_operations/finish"]
+  uri = "/webhooks"
+
+  [[webhooks.subscriptions]]
+  compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]
+  uri = "/webhooks"
+
+[pos]
+embedded = false

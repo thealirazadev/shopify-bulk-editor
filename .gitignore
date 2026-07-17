@@ -1,0 +1,43 @@
+# dependencies
+node_modules/
+
+# remix / vite build output
+/build/
+/public/build/
+.cache/
+.vite/
+
+# environment variables (never commit real secrets)
+.env
+.env.*.local
+
+# prisma local database
+/prisma/dev.sqlite
+/prisma/dev.sqlite-journal
+/prisma/*.db
+/prisma/*.db-journal
+
+# generated export files
+/storage/exports/*
+!/storage/exports/.gitkeep
+
+# typescript build info
+*.tsbuildinfo
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.log
+
+# coverage
+coverage/
+
+# shopify cli local state
+.shopify/
+
+# editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
