@@ -1,0 +1,91 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// Required by the Prisma session storage adapter. Fields match the adapter's
+// expected shape; do not rename them.
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+}
+
+// Per-shop named filter presets for the product browser.
+model SavedFilter {
+  id         String   @id @default(cuid())
+  shop       String
+  name       String
+  filterJson String
+  createdAt  DateTime @default(now())
+
+  @@unique([shop, name])
+}
+
+// A unit of bulk work. SQLite has no Prisma enums, so type/status are strings
+// with allowed values enforced in app/lib and documented in docs/architecture.md.
+model Job {
+  id               String    @id @default(cuid())
+  shop             String
+  type             String // edit | csv_import | export | undo
+  status           String // draft | staging | staged | queued | running |
+  //                         completed | completed_with_errors | failed |
+  //                         canceled | discarded
+  editSetJson      String?
+  selectionJson    String?
+  totalItems       Int       @default(0)
+  processedCount   Int       @default(0)
+  successCount     Int       @default(0)
+  failedCount      Int       @default(0)
+  skippedCount     Int       @default(0)
+  errorCode        String?
+  errorMessage     String?
+  fileName         String?
+  fileHash         String?
+  bulkOperationGid String?
+  resultPath       String?
+  undoOfJobId      String?   @unique
+  undoneByJobId    String?
+  heartbeatAt      DateTime?
+  createdAt        DateTime  @default(now())
+  startedAt        DateTime?
+  finishedAt       DateTime?
+  items            JobItem[]
+
+  @@index([shop, status])
+  @@index([shop, createdAt])
+}
+
+// One product's outcome within a job. beforeJson/afterJson hold only the
+// fields the edit touches; status/message carry the per-item result.
+model JobItem {
+  id           String  @id @default(cuid())
+  jobId        String
+  job          Job     @relation(fields: [jobId], references: [id])
+  productGid   String
+  productTitle String
+  csvRow       Int?
+  beforeJson   String?
+  afterJson    String?
+  status       String // pending | applied | failed | skipped_stale |
+  //                      skipped_unchanged | invalid
+  message      String?
+
+  @@index([jobId, status])
+}
