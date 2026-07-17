@@ -6,6 +6,9 @@ import { RemixServer } from "@remix-run/react";
 import { isbot } from "isbot";
 import { renderToPipeableStream } from "react-dom/server";
 
+import { logger } from "./lib/logger.server";
+import { addDocumentResponseHeaders } from "./shopify.server";
+
 export const streamTimeout = 5000;
 
 export default async function handleRequest(
@@ -15,6 +18,7 @@ export default async function handleRequest(
   remixContext: EntryContext,
   _loadContext: AppLoadContext,
 ) {
+  addDocumentResponseHeaders(request, responseHeaders);
   const userAgent = request.headers.get("user-agent");
   const callbackName = userAgent && isbot(userAgent) ? "onAllReady" : "onShellReady";
 
@@ -44,8 +48,9 @@ export default async function handleRequest(
         },
         onError(error) {
           didError = true;
-          // eslint-disable-next-line no-console
-          console.error(error);
+          logger.error("unhandled render error", {
+            error: error instanceof Error ? error.message : String(error),
+          });
         },
       },
     );
