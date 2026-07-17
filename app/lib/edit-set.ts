@@ -232,8 +232,8 @@ export interface ItemComputation {
 }
 
 // Round half away from zero to 2 decimals, guarding binary-float error.
-export function roundHalfUp2(n: number): number {
-  const scaled = n * 100;
+export function roundHalfUp2(amount: number): number {
+  const scaled = amount * 100;
   const rounded = Math.sign(scaled) * Math.round(Math.abs(scaled) + 1e-9);
   return rounded / 100;
 }
@@ -270,15 +270,17 @@ export function computeItem(current: ProductState, editSet: EditSet): ItemComput
   for (const op of editSet.operations) {
     if (op.field === "price") {
       before.variants = current.variants.map((variant) => ({ ...variant }));
-      after.variants = current.variants.map((variant) => {
+      const nextVariants: VariantPrice[] = [];
+      for (const variant of current.variants) {
         const nextNumber = computePriceNumber(variant.price, op);
         if (nextNumber < 0) {
           invalidMessage = "A resulting price would be negative.";
         }
         const nextPrice = nextNumber.toFixed(2);
         if (fmt(variant.price) !== nextPrice) changed = true;
-        return { id: variant.id, price: nextPrice };
-      });
+        nextVariants.push({ id: variant.id, price: nextPrice });
+      }
+      after.variants = nextVariants;
     } else if (op.field === "status") {
       before.status = current.status;
       after.status = op.value;
