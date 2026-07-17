@@ -1,6 +1,12 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
-import { useFetcher, useNavigate, useLoaderData, useSearchParams } from "@remix-run/react";
+import {
+  useFetcher,
+  useNavigate,
+  useLoaderData,
+  useSearchParams,
+  useSubmit,
+} from "@remix-run/react";
 import {
   Badge,
   Banner,
@@ -244,6 +250,7 @@ export default function ProductsIndex() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const savedFetcher = useFetcher<typeof action>();
+  const submit = useSubmit();
   const { mode, setMode } = useSetIndexFiltersMode();
   const [selectedTab, setSelectedTab] = useState(0);
 
@@ -449,8 +456,26 @@ export default function ProductsIndex() {
 
   const selectedCount = allResourcesSelected ? data.products.length : selectedResources.length;
 
+  const startBulkEdit = useCallback(() => {
+    const selection = allResourcesSelected
+      ? { mode: "filter" as const, filter: data.filter }
+      : { mode: "explicit" as const, productIds: selectedResources };
+    submit(
+      { selectionJson: JSON.stringify(selection) },
+      { method: "post", action: "/app/edits/new" },
+    );
+  }, [allResourcesSelected, data.filter, selectedResources, submit]);
+
   return (
-    <Page title="Products">
+    <Page
+      title="Products"
+      primaryAction={{
+        content: "Bulk edit selected",
+        disabled: selectedCount === 0,
+        onAction: startBulkEdit,
+      }}
+      secondaryActions={[{ content: "Import CSV", url: "/app/import" }]}
+    >
       <Layout>
         <Layout.Section>
           {data.error ? (

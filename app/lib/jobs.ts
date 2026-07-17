@@ -2,7 +2,13 @@
 // the routes. SQLite has no Prisma enums, so these string unions are the
 // authoritative allowed values (see docs/architecture.md).
 
+import type { ProductFilter } from "./filters";
+
 export type JobType = "edit" | "csv_import" | "export" | "undo";
+
+// How a job's target products are chosen (docs/api-contracts.md).
+export type Selection =
+  { mode: "explicit"; productIds: string[] } | { mode: "filter"; filter: ProductFilter };
 
 export type JobStatus =
   | "draft"
