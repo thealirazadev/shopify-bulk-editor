@@ -4,6 +4,39 @@ Running log of what is done, what is in flight, and decisions worth remembering.
 
 ## Completed
 
+- 2026-07-22 — Senior quality pass. Four real defects found and fixed, each with a regression test
+  that fails before the fix (73 tests green):
+  1. `apply.server.ts` — undo of a metafield set on a product that had **no** prior metafield
+     produced an after-value of `null` and called `metafieldsSet` with it. `MetafieldsSetInput.value`
+     is non-null, so the undo item failed and the metafield was never removed. Now routes a null
+     after-value to a new `metafieldsDelete` mutation. This is the only case where an after-value can
+     be null (edit-set validation forbids a null set), so the branch is bounded to undo-of-backfill.
+  2. `apply.server.ts` — the per-item progress increment was an unguarded `db.job.update`, so a
+     cancel landing while the item's mutation was in flight could have its authoritative counts
+     incremented on top; when the cancel hit the _final_ item the in-loop stop check never ran and
+     `finalize()` no-ops on a non-running job, leaving the drift permanent (processedCount could
+     exceed totalItems). Increment is now guarded on `status: "running"`, and the loop tail
+     reconciles a canceled job's counts from its items.
+  3. `throttle.server.ts` — `docs/architecture.md` specifies retrying an item once after a
+     `THROTTLED` error, but `runGraphql` threw on any `errors` array, so a transient throttle
+     permanently failed the item. Now retries once (the recorded cost block paces the retry through
+     `beforeCall`) and fails only on a second THROTTLED.
+  4. `csv.server.ts` — the formula-injection guard covered `= + - @` but not leading TAB (0x09) or
+     CR (0x0D), which are also spreadsheet formula triggers.
+     Reviewed and found sound, no change made: leaky-bucket pacing (cannot stall or busy-loop —
+     `restoreRate <= 0` short-circuits, waits are finite, and pacing is sequential per call); stale-skip
+     comparison (numeric price compare tolerates `10.0` vs `10.00`); percentage undo round-trip (exact,
+     because undo restores the stored absolute before-string rather than re-applying an inverse
+     percentage); tag add/remove inversion (apply diffs the two snapshot lists, which equals the delta,
+     so unrelated tags added meanwhile survive); idempotent re-import (absolute values + unchanged-skip +
+     file hash); export download authorization (shop-scoped `findFirst`, `resultPath` comes from the DB
+     and never from user input, so no cross-shop read and no traversal). Investigated and dismissed: a
+     UTF-8 BOM does **not** break import — `parseImportCsv` trims every header/cell and JS `.trim()`
+     strips U+FEFF.
+     Also added: CI + license badges and a "Design decisions" section in the README (sourced from
+     `docs/architecture.md`/PRD, no invented rationale), a measured CSV parse throughput benchmark
+     (`npm run bench`, separate vitest config so it stays out of CI), `SECURITY.md`, and a grouped
+     monthly `.github/dependabot.yml`.
 - 2026-07-22 — Repo housekeeping: added root `LICENSE` (MIT, 2026 Ali Raza) and
   `.github/workflows/ci.yml`. CI runs on push and pull_request to `main`: Node 24 via
   `actions/setup-node@v4` with npm cache, `npm ci`, `npm run prisma:generate`, then the four gate
