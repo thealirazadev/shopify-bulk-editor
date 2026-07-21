@@ -12,6 +12,7 @@
     "format": "prettier --write .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "bench": "vitest run --config vitest.bench.config.ts",
     "start": "remix-serve ./build/server/index.js",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
