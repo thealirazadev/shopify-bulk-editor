@@ -344,4 +344,44 @@ describe("runApply (cancel)", () => {
     expect((await db.jobItem.findUnique({ where: { id: item.id } }))?.status).toBe("pending");
     expect((await db.job.findUnique({ where: { id: job.id } }))?.status).toBe("canceled");
   });
+
+  it("reconciles final counts to the item aggregate when canceled on the last item", async () => {
+    const job = await db.job.create({
+      data: { shop: "test.myshopify.com", type: "edit", status: "running", totalItems: 1 },
+    });
+    await seedPriceItem(job.id, "gid://p/41", "gid://v/41", "11.00");
+
+    // Simulate the cancel action landing while this (final) item's mutation is in
+    // flight: it sets the job to canceled and writes counts that already include
+    // the item. The per-item increment must not then double-count it.
+    const base = makeAdmin({
+      "gid://p/41": { status: "ACTIVE", variants: [{ id: "gid://v/41", price: "10.00" }] },
+    });
+    const admin: WorkerAdmin = {
+      graphql: async (query, options) => {
+        const result = await base.graphql(query, options);
+        if (query.includes("UpdateVariantPrices")) {
+          await db.job.update({
+            where: { id: job.id },
+            data: {
+              status: "canceled",
+              finishedAt: new Date(),
+              processedCount: 1,
+              successCount: 1,
+            },
+          });
+        }
+        return result;
+      },
+    };
+
+    await runApply(job, admin, createThrottler());
+
+    const finished = await db.job.findUnique({ where: { id: job.id } });
+    const appliedCount = await db.jobItem.count({ where: { jobId: job.id, status: "applied" } });
+    expect(finished?.status).toBe("canceled");
+    expect(appliedCount).toBe(1);
+    expect(finished?.successCount).toBe(1);
+    expect(finished?.processedCount).toBe(1);
+  });
 });

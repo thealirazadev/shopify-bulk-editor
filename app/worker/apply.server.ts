@@ -327,8 +327,11 @@ export async function runApply(job: Job, admin: WorkerAdmin, throttle: Throttler
     }
 
     const outcome = await applyItem(job, item, admin, throttle);
-    await db.job.update({
-      where: { id: job.id },
+    // Guard the live-progress increment on the job still running: a cancel that
+    // lands while this item's mutation is in flight writes authoritative counts,
+    // and an unconditional increment on top of them would double-count the item.
+    await db.job.updateMany({
+      where: { id: job.id, status: "running" },
       data: {
         heartbeatAt: new Date(),
         processedCount: { increment: 1 },
@@ -337,6 +340,19 @@ export async function runApply(job: Job, admin: WorkerAdmin, throttle: Throttler
         skippedCount: outcome === "skipped_stale" ? { increment: 1 } : undefined,
       },
     });
+  }
+
+  // A cancel that lands during the final item never hits the in-loop stop check,
+  // so reconcile terminal counts from the items (the source of truth) rather than
+  // trusting the raced per-item increments.
+  const finalState = await db.job.findUnique({ where: { id: job.id }, select: { status: true } });
+  if (finalState?.status === "canceled") {
+    await db.job.updateMany({
+      where: { id: job.id, status: "canceled" },
+      data: await computeCounts(job.id),
+    });
+    logger.info("apply loop stopped early", { shop: job.shop, jobId: job.id });
+    return;
   }
 
   await finalize(job.id);
