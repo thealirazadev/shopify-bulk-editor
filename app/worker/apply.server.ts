@@ -53,6 +53,15 @@ const SET_METAFIELD = `#graphql
   }
 `;
 
+const DELETE_METAFIELD = `#graphql
+  mutation DeleteMetafield($metafields: [MetafieldIdentifierInput!]!) {
+    metafieldsDelete(metafields: $metafields) {
+      deletedMetafields { key }
+      userErrors { field message }
+    }
+  }
+`;
+
 interface UserError {
   field?: string[] | null;
   message: string;
@@ -193,25 +202,48 @@ async function applyItem(
     }
 
     if (after.metafield) {
-      const data = await runGraphql<{ metafieldsSet: { userErrors: UserError[] } }>(
-        admin,
-        throttle,
-        "metafield",
-        SET_METAFIELD,
-        {
-          metafields: [
-            {
-              ownerId: item.productGid,
-              namespace: after.metafield.namespace,
-              key: after.metafield.key,
-              type: after.metafield.type,
-              value: after.metafield.value,
-            },
-          ],
-        },
-      );
-      const error = firstError(data.metafieldsSet.userErrors);
-      if (error) return failItem(item.id, "metafield", error, applied);
+      // A null after-value means the product had no metafield before this edit
+      // (an undo of a backfill); metafieldsSet requires a non-null value, so the
+      // restore is a delete, not a set.
+      if (after.metafield.value === null) {
+        const data = await runGraphql<{ metafieldsDelete: { userErrors: UserError[] } }>(
+          admin,
+          throttle,
+          "metafield_delete",
+          DELETE_METAFIELD,
+          {
+            metafields: [
+              {
+                ownerId: item.productGid,
+                namespace: after.metafield.namespace,
+                key: after.metafield.key,
+              },
+            ],
+          },
+        );
+        const error = firstError(data.metafieldsDelete.userErrors);
+        if (error) return failItem(item.id, "metafield", error, applied);
+      } else {
+        const data = await runGraphql<{ metafieldsSet: { userErrors: UserError[] } }>(
+          admin,
+          throttle,
+          "metafield",
+          SET_METAFIELD,
+          {
+            metafields: [
+              {
+                ownerId: item.productGid,
+                namespace: after.metafield.namespace,
+                key: after.metafield.key,
+                type: after.metafield.type,
+                value: after.metafield.value,
+              },
+            ],
+          },
+        );
+        const error = firstError(data.metafieldsSet.userErrors);
+        if (error) return failItem(item.id, "metafield", error, applied);
+      }
       applied.push("metafield");
     }
 

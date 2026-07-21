@@ -245,6 +245,63 @@ describe("runApply (undo)", () => {
     expect(originalAfter?.undoneByJobId).toBe(undoJob.id);
   });
 
+  it("deletes the metafield when undo restores a previously-absent value", async () => {
+    const undoJob = await db.job.create({
+      data: { shop: "test.myshopify.com", type: "undo", status: "queued", totalItems: 1 },
+    });
+    // Original edit set a metafield on a product that had none; the undo's
+    // after-value is therefore null and must delete the metafield, not set null.
+    const undoItem = await db.jobItem.create({
+      data: {
+        jobId: undoJob.id,
+        productGid: "gid://p/32",
+        productTitle: "Backfilled",
+        status: "pending",
+        beforeJson: JSON.stringify({
+          metafield: {
+            namespace: "custom",
+            key: "badge",
+            type: "single_line_text_field",
+            value: "New",
+          },
+        }),
+        afterJson: JSON.stringify({
+          metafield: {
+            namespace: "custom",
+            key: "badge",
+            type: "single_line_text_field",
+            value: null,
+          },
+        }),
+      },
+    });
+
+    const calls: string[] = [];
+    const base = makeAdmin({
+      "gid://p/32": { status: "ACTIVE", variants: [], metafield: { value: "New" } },
+    });
+    const admin: WorkerAdmin = {
+      graphql: async (query, options) => {
+        if (query.includes("SetMetafield")) calls.push("set");
+        if (query.includes("DeleteMetafield")) calls.push("delete");
+        if (query.includes("DeleteMetafield")) {
+          return {
+            json: async () => ({
+              data: { metafieldsDelete: { deletedMetafields: [{ key: "badge" }], userErrors: [] } },
+              ...COST,
+            }),
+          };
+        }
+        return base.graphql(query, options);
+      },
+    };
+
+    await runApply(undoJob, admin, createThrottler());
+
+    expect((await db.jobItem.findUnique({ where: { id: undoItem.id } }))?.status).toBe("applied");
+    expect(calls).toEqual(["delete"]);
+  });
+
   it("skips an undo item whose live value changed since the original apply", async () => {
     const undoJob = await db.job.create({
       data: { shop: "test.myshopify.com", type: "undo", status: "queued", totalItems: 1 },
