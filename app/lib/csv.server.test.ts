@@ -11,6 +11,11 @@ describe("escapeCsvCell", () => {
     expect(escapeCsvCell("@x")).toBe("'@x");
   });
 
+  it("prefixes cells that begin with a tab or carriage return", () => {
+    expect(escapeCsvCell("\t=SUM(A1)")).toBe("'\t=SUM(A1)");
+    expect(escapeCsvCell("\r=SUM(A1)")).toBe("'\r=SUM(A1)");
+  });
+
   it("leaves ordinary cells untouched", () => {
     expect(escapeCsvCell("Blue Shirt")).toBe("Blue Shirt");
     expect(escapeCsvCell("10.00")).toBe("10.00");

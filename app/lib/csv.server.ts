@@ -19,9 +19,11 @@ export const CSV_COLUMNS = [
 ] as const;
 
 // Prefix cells that a spreadsheet could read as a formula so they render as
-// text (docs/rules.md: CSV formula-injection guard).
+// text (docs/rules.md: CSV formula-injection guard). Leading tab (0x09) and
+// carriage return (0x0D) are triggers too, so they are guarded alongside the
+// = + - @ characters.
 export function escapeCsvCell(value: string): string {
-  return /^[=+\-@]/.test(value) ? `'${value}` : value;
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
 }
 
 interface BulkProduct {
