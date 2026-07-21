@@ -4,6 +4,14 @@ Running log of what is done, what is in flight, and decisions worth remembering.
 
 ## Completed
 
+- 2026-07-22 — Dependency security pass. Cleared 24 of 25 open Dependabot alerts (2 critical, 8 high,
+  13 medium, 2 low → 1 high remaining); `npm audit` 16 → 8, all 8 being the one unfixable root cause
+  below. Direct: `vite` 5.4.11 → 6.4.3, `vitest` 2.1.8 → 3.2.7. Transitive, via a new `overrides`
+  block: `tar` 6.2.1 → 7.5.21, `esbuild` 0.17.6/0.21.5 → 0.25.12,
+  `estree-util-value-to-estree` 1.3.0 → 3.5.0, plus `vite` pinned tree-wide to collapse a nested
+  5.4.21 copy. No source changes were needed; 73 tests, typecheck, lint, and build stayed green at
+  every step.
+
 - 2026-07-22 — Senior quality pass. Four real defects found and fixed, each with a regression test
   that fails before the fix (73 tests green):
   1. `apply.server.ts` — undo of a metafield set on a product that had **no** prior metafield
@@ -84,6 +92,28 @@ Running log of what is done, what is in flight, and decisions worth remembering.
 
 ## Decisions log
 
+- 2026-07-22 — **`turbo-stream` left at 2.4.1 (GHSA-rxv8-25v2-qmq8, high, CVE-2026-34077).** The only
+  alert not fixed. Patched line is 3.x, but it is API-incompatible with Remix 2 single fetch, which
+  this app enables (`v3_singleFetch: true`): v3 `decode()` resolves to the payload directly while
+  Remix reads `decoded.value`, and v3 encodes/decodes string streams where Remix pipes bytes.
+  Verified empirically — with the override applied, typecheck, lint, all 73 tests, and the build
+  still pass while `decoded.value` is `undefined`, i.e. every loader response would silently carry
+  no data. The gate cannot catch this because the suite covers pure lib/worker logic and never
+  crosses the single-fetch boundary. Upstream fix is React Router 7.14+, a framework migration that
+  would rewrite a documented stack decision, so it was left alone per the stop rule. Exposure is
+  low: DoS-only (CVSS 3.1 7.5, `C:N/I:N/A:H`), and every route sits behind Shopify session-token
+  auth, so it is not anonymously reachable. Revisit if/when the app moves to React Router 7.
+- 2026-07-22 — Vite 6 is the ceiling, not Vite 7: `@remix-run/dev` 2.17.5 (latest 2.x) declares
+  `vite: "^5.1.0 || ^6.0.0"`. Recorded in `docs/architecture.md`.
+- 2026-07-22 — Transitive pins use `overrides` rather than dependency bumps because the patched
+  versions sit outside `@remix-run/dev`'s own manifest ranges. `cacache` declares `tar` but never
+  imports it, and there are no `.mdx` or `.css.ts` files, so the estree/vanilla-extract paths are
+  dead code here — the pins are inert at runtime. Documented in `docs/architecture.md` with a note to
+  drop entries on a Remix upgrade rather than carry stale pins.
+- 2026-07-22 — The `README.md` benchmark provenance line still reads "vitest 2.1.8" on purpose: it
+  records the toolchain those published medians were measured under. A spot re-run on vitest 3.2.7
+  came in at or faster than every documented range, but re-measuring under the full 7-repeat protocol
+  is out of scope for a security pass, so the numbers and their provenance were left intact.
 - 2026-07-18 — Applies use throttled sequential mutations, not `bulkOperationRunMutation`: per-item results, stale checks, and undo capture need item-at-a-time handling, and target scale (≤5,000 items) fits sequential throughput. Export still uses a bulk query. Rationale in `docs/architecture.md`.
 - 2026-07-18 — Background work is a DB-backed `Job`/`JobItem` table with an in-process worker loop; no queue library. Requires a single app instance in production.
 - 2026-07-18 — CSV v1 covers price, status, and tags only; metafields are UI-edit only.
