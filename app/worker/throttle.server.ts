@@ -66,10 +66,22 @@ export type Throttler = ReturnType<typeof createThrottler>;
 // Transport. A narrow admin-client interface so worker functions can be driven
 // by a mocked client in tests (docs/testing.md).
 
+export interface GraphQLError {
+  message: string;
+  extensions?: { code?: string };
+}
+
 export interface GraphQLBody {
   data?: unknown;
-  errors?: { message: string }[];
+  errors?: GraphQLError[];
   extensions?: { cost?: CostExtension };
+}
+
+// Shopify signals rate limiting with a THROTTLED error code (older responses
+// only carry the word in the message). The cost block on the same response
+// updates the pacer, so a retry waits out the shortfall before trying again.
+function isThrottled(errors: GraphQLError[]): boolean {
+  return errors.some((err) => err.extensions?.code === "THROTTLED" || /throttl/i.test(err.message));
 }
 
 export interface WorkerAdmin {
@@ -89,16 +101,26 @@ export async function runGraphql<TData>(
   query: string,
   variables?: Record<string, unknown>,
 ): Promise<TData> {
-  await throttle.beforeCall(op);
-  const response = await admin.graphql(query, variables ? { variables } : undefined);
-  const body = await response.json();
-  throttle.record(op, body.extensions?.cost);
+  // One retry: a THROTTLED response is transient. Recording its cost block first
+  // lets beforeCall pace the retry; a second THROTTLED (or any other error) fails
+  // the call so the caller can mark the item failed.
+  const maxAttempts = 2;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    await throttle.beforeCall(op);
+    const response = await admin.graphql(query, variables ? { variables } : undefined);
+    const body = await response.json();
+    throttle.record(op, body.extensions?.cost);
 
-  if (body.errors && body.errors.length > 0) {
-    throw new Error(body.errors.map((err) => err.message).join("; "));
+    if (body.errors && body.errors.length > 0) {
+      if (isThrottled(body.errors) && attempt < maxAttempts) continue;
+      throw new Error(body.errors.map((err) => err.message).join("; "));
+    }
+    if (body.data == null) {
+      throw new Error("GraphQL response contained no data.");
+    }
+    return body.data as TData;
   }
-  if (body.data == null) {
-    throw new Error("GraphQL response contained no data.");
-  }
-  return body.data as TData;
+
+  // Unreachable: the loop either returns data or throws on the final attempt.
+  throw new Error("GraphQL call exhausted its retries.");
 }
