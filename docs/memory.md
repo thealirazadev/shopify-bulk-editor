@@ -4,6 +4,14 @@ Running log of what is done, what is in flight, and decisions worth remembering.
 
 ## Completed
 
+- 2026-07-22 — Repo housekeeping: added root `LICENSE` (MIT, 2026 Ali Raza) and
+  `.github/workflows/ci.yml`. CI runs on push and pull_request to `main`: Node 24 via
+  `actions/setup-node@v4` with npm cache, `npm ci`, `npm run prisma:generate`, then the four gate
+  commands from `docs/testing.md` (`typecheck`, `lint`, `test`, `build`). Dummy Shopify/database env
+  vars are set at the job level because `app/lib/env.server.ts` fails fast on missing variables when
+  `app/shopify.server.ts` is imported; no real credentials are needed since the Admin GraphQL client is
+  mocked and each integration test pushes its own throwaway SQLite file. Deploy, Prisma migrations, and
+  the manual dev-store QA checklists stay out of CI (they need a real store and hosting).
 - 2026-07-18 — Phase 4 (operational hardening) complete and green. Cancel queued/running jobs (guarded
   transition to `canceled` with recomputed counts; the running worker stops at the next item boundary
   and applied items stay applied/undoable) with a confirm modal. Worker cleanup cycle (every 10 min):
