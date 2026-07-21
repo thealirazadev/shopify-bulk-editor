@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      # Dummy values only. The Admin GraphQL API is mocked in tests and each
+      # integration test pushes its own throwaway SQLite file, so no real
+      # credentials are needed; these exist because app/lib/env.server.ts
+      # fails fast when a required variable is absent.
+      SHOPIFY_API_KEY: 00000000000000000000000000000000
+      SHOPIFY_API_SECRET: ci-dummy-secret
+      SCOPES: read_products,write_products
+      SHOPIFY_APP_URL: https://example.com
+      DATABASE_URL: file:./ci.sqlite
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm run test
+
+      - name: Build
+        run: npm run build
