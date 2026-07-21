@@ -105,14 +105,28 @@ shopify-bulk-editor/
 
 Same core stack as `shopify-remix-starter`; exact versions are pinned at install time and the lockfile is committed.
 
-- **Remix 2 (Vite 5) + TypeScript 5** — Loader/action model fits Shopify's per-request auth; the official Shopify package targets it.
+- **Remix 2 (Vite 6) + TypeScript 5** — Loader/action model fits Shopify's per-request auth; the official Shopify package targets it. Vite 6 is the ceiling: `@remix-run/dev` 2.17.5 declares `vite: "^5.1.0 || ^6.0.0"`, so Vite 7+ is out of range until the app moves to React Router 7.
 - **@shopify/shopify-app-remix 4** — OAuth, session token validation, webhook verification/registration. No hand-rolled auth.
 - **@shopify/polaris 13 + @shopify/app-bridge-react 4** — Native Admin look, embedded framing, navigation, toasts. No other UI framework.
 - **Prisma 6 + SQLite (dev) / Postgres (prod)** — First-class session adapter; the job tables need nothing beyond a relational store. Same schema in both environments via `DATABASE_URL`.
 - **csv-parse 5 / csv-stringify 6** — Battle-tested streaming CSV handling with correct quoting/escaping semantics; hand-rolling CSV parsing is a known bug farm. Only new runtime dependencies beyond the starter set.
-- **Vitest 2** — Unit tests for the pure logic that carries the safety guarantees (price math, validation, diffing, inverse edits, throttle pacing).
+- **Vitest 3** — Unit tests for the pure logic that carries the safety guarantees (price math, validation, diffing, inverse edits, throttle pacing).
 - **No queue/worker library** — Justified above.
 - **Node 20 LTS, Shopify CLI for dev tunneling** — As in the starter.
+
+### Pinned transitive dependencies
+
+`package.json` carries an `overrides` block (`tar`, `esbuild`, `estree-util-value-to-estree`,
+`vite`). These are build-time transitives of `@remix-run/dev` that ship known-vulnerable versions
+its manifest still allows; the overrides force patched releases. All four are dev/build scope and
+none is reachable from the running server. Revisit the block on any Remix upgrade — if the upstream
+ranges move past the pinned versions, drop the entry rather than carrying a stale pin.
+
+`turbo-stream` is deliberately **not** overridden. It is a runtime dependency of `@remix-run/react`
+and `@remix-run/server-runtime`, and its patched 3.x line is API-incompatible with Remix 2 single
+fetch (`decode()` returns the payload directly instead of `{ done, value }`, and the streams are
+strings rather than bytes). Forcing it silently breaks every loader response while the unit suite
+still passes. The upstream fix is React Router 7.14+, which is a framework migration, not a bump.
 
 ## Data model (Prisma)
 
