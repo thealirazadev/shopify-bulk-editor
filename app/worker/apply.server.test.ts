@@ -345,6 +345,55 @@ describe("runApply (cancel)", () => {
     expect((await db.job.findUnique({ where: { id: job.id } }))?.status).toBe("canceled");
   });
 
+  it("stops between items on cancel, leaving later items pending and applied ones applied", async () => {
+    const job = await db.job.create({
+      data: { shop: "test.myshopify.com", type: "edit", status: "running", totalItems: 3 },
+    });
+    const first = await seedPriceItem(job.id, "gid://p/50", "gid://v/50", "11.00");
+    const second = await seedPriceItem(job.id, "gid://p/51", "gid://v/51", "11.00");
+    const third = await seedPriceItem(job.id, "gid://p/52", "gid://v/52", "11.00");
+
+    // Cancel lands while the first item's mutation is in flight (before it is
+    // marked applied), the way the cancel action would: status flips to canceled
+    // with a zero applied count. The worker must then stop at the next item
+    // boundary and reconcile the count up to the item that did apply.
+    let canceled = false;
+    const base = makeAdmin({
+      "gid://p/50": { status: "ACTIVE", variants: [{ id: "gid://v/50", price: "10.00" }] },
+      "gid://p/51": { status: "ACTIVE", variants: [{ id: "gid://v/51", price: "10.00" }] },
+      "gid://p/52": { status: "ACTIVE", variants: [{ id: "gid://v/52", price: "10.00" }] },
+    });
+    const admin: WorkerAdmin = {
+      graphql: async (query, options) => {
+        const result = await base.graphql(query, options);
+        if (query.includes("UpdateVariantPrices") && !canceled) {
+          canceled = true;
+          await db.job.update({
+            where: { id: job.id },
+            data: {
+              status: "canceled",
+              finishedAt: new Date(),
+              processedCount: 0,
+              successCount: 0,
+            },
+          });
+        }
+        return result;
+      },
+    };
+
+    await runApply(job, admin, createThrottler());
+
+    expect((await db.jobItem.findUnique({ where: { id: first.id } }))?.status).toBe("applied");
+    expect((await db.jobItem.findUnique({ where: { id: second.id } }))?.status).toBe("pending");
+    expect((await db.jobItem.findUnique({ where: { id: third.id } }))?.status).toBe("pending");
+
+    const finished = await db.job.findUnique({ where: { id: job.id } });
+    expect(finished?.status).toBe("canceled");
+    expect(finished?.successCount).toBe(1);
+    expect(finished?.processedCount).toBe(1);
+  });
+
   it("reconciles final counts to the item aggregate when canceled on the last item", async () => {
     const job = await db.job.create({
       data: { shop: "test.myshopify.com", type: "edit", status: "running", totalItems: 1 },
