@@ -117,6 +117,27 @@ describe("parseImportCsv", () => {
     expect(result.invalidRows[0].message).toContain("row 2, column price");
   });
 
+  it("rejects a price with more than two decimal places", () => {
+    const csv = [
+      header,
+      "gid://shopify/Product/1,gid://shopify/ProductVariant/11,Shirt,ACTIVE,sale,10.999",
+    ].join("\n");
+    const result = parseImportCsv(csv);
+    expect(result.products).toHaveLength(0);
+    expect(result.invalidRows[0].message).toContain("more than two decimal places");
+  });
+
+  it("accepts one- and two-decimal prices", () => {
+    const csv = [
+      header,
+      "gid://shopify/Product/1,gid://shopify/ProductVariant/11,Shirt,ACTIVE,sale,10.5",
+      "gid://shopify/Product/2,gid://shopify/ProductVariant/21,Hat,ACTIVE,sale,10",
+    ].join("\n");
+    const result = parseImportCsv(csv);
+    expect(result.invalidRows).toHaveLength(0);
+    expect(result.products.map((product) => product.variants[0].price)).toEqual(["10.5", "10"]);
+  });
+
   it("reports an invalid status", () => {
     const csv = [
       header,

@@ -114,7 +114,11 @@ export interface ImportParseResult {
 
 const KNOWN_COLUMNS = new Set(CSV_COLUMNS as unknown as string[]);
 const STATUS_VALUES = ["ACTIVE", "DRAFT", "ARCHIVED"];
-const AMOUNT = /^\d+(\.\d+)?$/;
+// Money with at most two decimal places. Shopify rounds prices to the currency's
+// decimal precision, so accepting three-plus decimals here would let the stored
+// after-value drift from what the store keeps, breaking later stale/undo checks.
+const AMOUNT = /^\d+(\.\d{1,2})?$/;
+const OVER_PRECISION = /^\d+\.\d{3,}$/;
 
 function fail(message: string): ImportParseResult {
   return {
@@ -190,7 +194,10 @@ export function parseImportCsv(content: string): ImportParseResult {
     if (cols.price >= 0 && cell(cols.price) !== "") {
       const raw = cell(cols.price);
       if (!AMOUNT.test(raw)) {
-        invalid(`row ${csvRow}, column price: "${raw}" is not a valid amount`);
+        const detail = OVER_PRECISION.test(raw)
+          ? "has more than two decimal places"
+          : "is not a valid amount";
+        invalid(`row ${csvRow}, column price: "${raw}" ${detail}`);
         return;
       }
       price = raw;
