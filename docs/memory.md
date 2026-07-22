@@ -127,3 +127,14 @@ Running log of what is done, what is in flight, and decisions worth remembering.
 - 2026-07-18 — Product browser filters drive URL search params (debounced) so filtering runs server-side
   through the loader; saved filters render as IndexFilters tabs. Live-store verification of the exact
   GraphQL pagination/search is a documented manual step (no dev store available in this environment).
+- 2026-07-23 — README visuals: added four screenshots under `docs/images/` (product browser, preview
+  gate, job outcomes/undo, CSV import). No live store or Shopify credentials exist here, so App Bridge
+  + OAuth cannot run. Captured honestly by mounting the real Remix route default components in a
+  throwaway Vite harness with a react-router `createMemoryRouter` stub loader (the app's own
+  `@remix-run/react` hooks delegate to react-router 6.30, so no `@remix-run/testing` was needed),
+  wrapped in Polaris, fed mocked Admin-API-shaped data, and screenshotted with Playwright (chromium,
+  1280x900, 2x). Server-only imports (`~/db.server`, `~/shopify.server`, `~/lib/logger.server`,
+  `~/lib/csv.server`, `@remix-run/node`, `node:crypto`) were aliased to stubs because the routes touch
+  them only in loaders/actions, never in the render path — no app code, auth, or deps were changed.
+  The harness lived outside git and was deleted after capture. Every README caption states plainly the
+  shots were rendered locally against a mocked Admin API, not a live store.
