@@ -90,6 +90,35 @@ describe("parseImportCsv", () => {
     expect(parseImportCsv(header).ok).toBe(false);
   });
 
+  it("treats an empty or whitespace-only file as empty", () => {
+    expect(parseImportCsv("").error).toContain("empty");
+    expect(parseImportCsv("   \n  \n").error).toContain("empty");
+  });
+
+  it("ignores a UTF-8 BOM on the header row", () => {
+    const bom = "\uFEFF";
+    const csv = [
+      `${bom}${header}`,
+      "gid://shopify/Product/1,gid://shopify/ProductVariant/11,Shirt,ACTIVE,sale,10.00",
+    ].join("\n");
+    const result = parseImportCsv(csv);
+    expect(result.ok).toBe(true);
+    expect(result.unknownColumns).toEqual([]);
+    expect(result.products).toHaveLength(1);
+  });
+
+  it("parses carriage-return-only line endings", () => {
+    const csv = [
+      header,
+      "gid://shopify/Product/1,gid://shopify/ProductVariant/11,Shirt,ACTIVE,sale,10.00",
+      "gid://shopify/Product/2,gid://shopify/ProductVariant/21,Hat,ACTIVE,sale,12.00",
+    ].join("\r");
+    const result = parseImportCsv(csv);
+    expect(result.ok).toBe(true);
+    expect(result.products).toHaveLength(2);
+    expect(result.invalidRows).toHaveLength(0);
+  });
+
   it("aggregates variant rows into one product and validates good rows", () => {
     const csv = [
       header,
