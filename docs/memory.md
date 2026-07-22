@@ -4,6 +4,38 @@ Running log of what is done, what is in flight, and decisions worth remembering.
 
 ## Completed
 
+- 2026-07-23 — Hardening pass (73 → 101 tests, all gates green throughout). Eight granular commits:
+  1. `csv.server` — import price validation accepted three-plus decimal places, so the stored
+     after-value could drift from Shopify's rounded money value and later trip stale/undo checks; the
+     edit path never had this because it normalizes through `toFixed(2)`. Tightened `AMOUNT` to at most
+     two decimals with a distinct "more than two decimal places" message.
+  2. `csv.server` — a duplicated known column was silently resolved to the first occurrence (`indexOf`),
+     dropping values under the later duplicate. Now rejected with a clear message.
+  3. Regression tests locking already-correct behavior that was untested and fragile: UTF-8 BOM header
+     (stripped by the header re-trim), carriage-return-only line endings, and empty/whitespace files.
+  4. `undo` — proved `computeInverseItems` round-trips exactly for every edit type (price set,
+     price adjust %, status, tag add, tag remove, metafield set, metafield backfill→delete) by staging
+     an edit against a live state, inverting the applied snapshots, and asserting the restore.
+  5. `apply.server` — test for a cancel landing between items (not just the already-covered last-item
+     and already-canceled cases): the loop stops at the next boundary, later items stay `pending`,
+     applied ones stay `applied`, and counts reconcile from the item aggregate.
+  6. `undo` — centralized the undo-eligibility rules (previously duplicated across the job route's
+     loader and action) into a pure `undoEligibility(job, isLatest)` plus an injectable
+     `latestUndoableJobId(db, shop)` (type-only Prisma import keeps the module runtime-pure and
+     unit-testable). Behavior-preserving; conflict-message copy unified.
+  7. `undo` — bug fix: a canceled job's applied items were **not** undoable, contradicting the Phase 4
+     guarantee and the cancel modal's "remain undoable" promise. Added `canceled` to the undoable
+     statuses and required `successCount > 0` in `latestUndoableJobId`, so a no-op or
+     canceled-before-first-item job never becomes the "latest" and blocks undo of the job that actually
+     changed products. The modal copy is now accurate.
+  8. `filters` — `loadSavedFilters` did an unguarded `JSON.parse` per row inside the product-browser
+     loader; one corrupt or legacy row threw, was swallowed by the loader's outer catch, and took the
+     whole page down as a mislabeled UPSTREAM_ERROR while every saved filter vanished. Added a pure
+     `parseSavedFilter` that defensively parses, sanitizes to known/valid fields (dropping stale ones),
+     and returns null on unreadable JSON; the loader now skips bad rows (logged) and keeps the rest.
+  No product-write safety invariants were changed except to strengthen the undo guarantee; Admin API
+  stayed mocked; no new runtime dependencies.
+
 - 2026-07-22 — Dependency security pass. Cleared 24 of 25 open Dependabot alerts (2 critical, 8 high,
   13 medium, 2 low → 1 high remaining); `npm audit` 16 → 8, all 8 being the one unfixable root cause
   below. Direct: `vite` 5.4.11 → 6.4.3, `vitest` 2.1.8 → 3.2.7. Transitive, via a new `overrides`
