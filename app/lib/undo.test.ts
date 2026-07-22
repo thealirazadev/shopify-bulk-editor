@@ -177,6 +177,10 @@ describe("undoEligibility", () => {
     ).toEqual({ canUndo: true });
   });
 
+  it("allows undo of a canceled job that applied changes", () => {
+    expect(undoEligibility(facts({ status: "canceled" }), true)).toEqual({ canUndo: true });
+  });
+
   it("blocks a job that is not the most recent", () => {
     const result = undoEligibility(facts(), false);
     expect(result).toEqual({
@@ -192,7 +196,10 @@ describe("undoEligibility", () => {
 
   it("blocks a job that has not reached an undoable status", () => {
     const result = undoEligibility(facts({ status: "running" }), true);
-    expect(result).toEqual({ canUndo: false, reason: "Only a completed job can be undone." });
+    expect(result).toEqual({
+      canUndo: false,
+      reason: "Only a completed or canceled job can be undone.",
+    });
   });
 
   it("blocks a non-undoable job type", () => {
@@ -243,5 +250,32 @@ describe("latestUndoableJobId", () => {
 
   it("returns null when the shop has no undoable job", async () => {
     expect(await latestUndoableJobId(db, "empty.myshopify.com")).toBeNull();
+  });
+
+  it("counts a canceled job that applied changes as undoable", async () => {
+    const shop = "cancel-shop.myshopify.com";
+    await job({ shop, finishedAt: new Date("2026-01-01T00:00:00Z") });
+    const canceled = await job({
+      shop,
+      status: "canceled",
+      successCount: 2,
+      finishedAt: new Date("2026-02-01T00:00:00Z"),
+    });
+    expect(await latestUndoableJobId(db, shop)).toBe(canceled.id);
+  });
+
+  it("ignores jobs that applied nothing so they do not block a real undo", async () => {
+    const shop = "noop-shop.myshopify.com";
+    const applied = await job({ shop, finishedAt: new Date("2026-01-01T00:00:00Z") });
+    // A later canceled-before-first-item job (0 applied) must not shadow it.
+    await job({
+      shop,
+      status: "canceled",
+      successCount: 0,
+      finishedAt: new Date("2026-02-01T00:00:00Z"),
+    });
+    // A later completed-but-all-skipped job (0 applied) must not shadow it either.
+    await job({ shop, successCount: 0, finishedAt: new Date("2026-03-01T00:00:00Z") });
+    expect(await latestUndoableJobId(db, shop)).toBe(applied.id);
   });
 });

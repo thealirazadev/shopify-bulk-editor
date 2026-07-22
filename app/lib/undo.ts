@@ -9,8 +9,14 @@ import type { Snapshot } from "./edit-set";
 
 // Only user-driven edits and imports are reversible; exports and undos are not.
 export const UNDOABLE_JOB_TYPES: ReadonlyArray<string> = ["edit", "csv_import"];
-// Terminal statuses whose applied items can be undone (docs/architecture.md).
-export const UNDOABLE_JOB_STATUSES: ReadonlyArray<string> = ["completed", "completed_with_errors"];
+// Terminal statuses whose applied items can be undone (docs/architecture.md). A
+// canceled job is included because the items it applied before stopping are real
+// writes and stay reversible, matching the cancel modal's promise.
+export const UNDOABLE_JOB_STATUSES: ReadonlyArray<string> = [
+  "completed",
+  "completed_with_errors",
+  "canceled",
+];
 
 export interface UndoJobFacts {
   type: string;
@@ -32,7 +38,7 @@ export function undoEligibility(job: UndoJobFacts, isLatest: boolean): UndoEligi
     return { canUndo: false, reason: "This job was already undone." };
   }
   if (!UNDOABLE_JOB_STATUSES.includes(job.status)) {
-    return { canUndo: false, reason: "Only a completed job can be undone." };
+    return { canUndo: false, reason: "Only a completed or canceled job can be undone." };
   }
   if (!isLatest) {
     return { canUndo: false, reason: "Only the most recent applied job can be undone." };
@@ -51,6 +57,10 @@ export async function latestUndoableJobId(
       shop,
       type: { in: UNDOABLE_JOB_TYPES as string[] },
       status: { in: UNDOABLE_JOB_STATUSES as string[] },
+      // A job that applied nothing (all skipped, or canceled before its first
+      // item) has nothing to undo, so it must not become the "latest" and block
+      // undo of the job that actually changed products.
+      successCount: { gt: 0 },
     },
     orderBy: { finishedAt: "desc" },
     select: { id: true },
