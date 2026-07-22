@@ -1,9 +1,12 @@
-import { describe, expect, it } from "vitest";
+import type { PrismaClient } from "@prisma/client";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { computeItem } from "./edit-set";
 import type { EditSet, ProductState } from "./edit-set";
-import { computeInverseItems } from "./undo";
-import type { AppliedItem, UndoItem } from "./undo";
+import { computeInverseItems, latestUndoableJobId, undoEligibility } from "./undo";
+import type { AppliedItem, UndoItem, UndoJobFacts } from "./undo";
+
+import { setupTestDb } from "~/worker/test-db";
 
 function item(overrides: Partial<AppliedItem>): AppliedItem {
   return {
@@ -156,5 +159,89 @@ describe("computeInverseItems round-trips every edit type", () => {
     // A null after-value signals the worker to delete rather than set the metafield.
     expect(undo.after.metafield?.value).toBeNull();
     expect(undo.before.metafield?.value).toBe("New");
+  });
+});
+
+describe("undoEligibility", () => {
+  const facts = (overrides: Partial<UndoJobFacts> = {}): UndoJobFacts => ({
+    type: "edit",
+    status: "completed",
+    undoneByJobId: null,
+    ...overrides,
+  });
+
+  it("allows undo of the latest completed undoable job", () => {
+    expect(undoEligibility(facts(), true)).toEqual({ canUndo: true });
+    expect(
+      undoEligibility(facts({ status: "completed_with_errors", type: "csv_import" }), true),
+    ).toEqual({ canUndo: true });
+  });
+
+  it("blocks a job that is not the most recent", () => {
+    const result = undoEligibility(facts(), false);
+    expect(result).toEqual({
+      canUndo: false,
+      reason: "Only the most recent applied job can be undone.",
+    });
+  });
+
+  it("blocks an already-undone job", () => {
+    const result = undoEligibility(facts({ undoneByJobId: "job-2" }), true);
+    expect(result).toEqual({ canUndo: false, reason: "This job was already undone." });
+  });
+
+  it("blocks a job that has not reached an undoable status", () => {
+    const result = undoEligibility(facts({ status: "running" }), true);
+    expect(result).toEqual({ canUndo: false, reason: "Only a completed job can be undone." });
+  });
+
+  it("blocks a non-undoable job type", () => {
+    const result = undoEligibility(facts({ type: "export" }), true);
+    expect(result).toEqual({ canUndo: false, reason: "This job type cannot be undone." });
+  });
+});
+
+describe("latestUndoableJobId", () => {
+  let db: PrismaClient;
+  let cleanup: () => Promise<void>;
+
+  beforeAll(async () => {
+    const setup = await setupTestDb();
+    db = setup.db;
+    cleanup = setup.cleanup;
+  });
+
+  afterAll(async () => {
+    await cleanup();
+  });
+
+  async function job(overrides: Record<string, unknown>) {
+    return db.job.create({
+      data: {
+        shop: "shop-a.myshopify.com",
+        type: "edit",
+        status: "completed",
+        totalItems: 1,
+        successCount: 1,
+        finishedAt: new Date(),
+        ...overrides,
+      },
+    });
+  }
+
+  it("returns the most recently finished undoable job, scoped to the shop", async () => {
+    await job({ finishedAt: new Date("2026-01-01T00:00:00Z") });
+    const newer = await job({ finishedAt: new Date("2026-02-01T00:00:00Z") });
+    // Newer, but a different shop -> ignored.
+    await job({ shop: "shop-b.myshopify.com", finishedAt: new Date("2026-03-01T00:00:00Z") });
+    // Not an undoable type or status -> ignored.
+    await job({ type: "export", finishedAt: new Date("2026-04-01T00:00:00Z") });
+    await job({ status: "running", finishedAt: new Date("2026-05-01T00:00:00Z") });
+
+    expect(await latestUndoableJobId(db, "shop-a.myshopify.com")).toBe(newer.id);
+  });
+
+  it("returns null when the shop has no undoable job", async () => {
+    expect(await latestUndoableJobId(db, "empty.myshopify.com")).toBeNull();
   });
 });

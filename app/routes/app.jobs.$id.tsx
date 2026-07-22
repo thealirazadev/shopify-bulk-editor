@@ -32,14 +32,17 @@ import { useEffect, useState } from "react";
 
 import db from "~/db.server";
 import { apiError, newRequestId } from "~/lib/errors";
-import { computeInverseItems } from "~/lib/undo";
+import {
+  computeInverseItems,
+  latestUndoableJobId,
+  undoEligibility,
+  UNDOABLE_JOB_TYPES,
+} from "~/lib/undo";
 import { logger } from "~/lib/logger.server";
 import { authenticate } from "~/shopify.server";
 
 const PAGE_SIZE = 50;
 const ACTIVE_STATUSES = ["staging", "queued", "running"];
-const UNDOABLE_TYPES = ["edit", "csv_import"];
-const APPLIED_STATUSES = ["completed", "completed_with_errors"];
 
 const TYPE_LABEL: Record<string, string> = {
   edit: "Bulk edit",
@@ -47,16 +50,6 @@ const TYPE_LABEL: Record<string, string> = {
   export: "Export",
   undo: "Undo",
 };
-
-// The shop's most recent applied edit/import job id, for undo eligibility.
-async function latestUndoableJobId(shop: string): Promise<string | null> {
-  const latest = await db.job.findFirst({
-    where: { shop, type: { in: UNDOABLE_TYPES }, status: { in: APPLIED_STATUSES } },
-    orderBy: { finishedAt: "desc" },
-    select: { id: true },
-  });
-  return latest?.id ?? null;
-}
 
 export async function loader({ request, params }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
@@ -84,22 +77,11 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   const counts: Record<string, number> = {};
   for (const row of grouped) counts[row.status] = row._count._all;
 
-  const isUndoableType = UNDOABLE_TYPES.includes(job.type);
-  const isApplied = APPLIED_STATUSES.includes(job.status);
-  const isLatest = isApplied && (await latestUndoableJobId(session.shop)) === job.id;
-  let canUndo = false;
-  let undoReason: string | null = null;
-  if (isUndoableType) {
-    if (job.undoneByJobId) {
-      undoReason = "This job was already undone.";
-    } else if (isApplied && isLatest) {
-      canUndo = true;
-    } else if (isApplied) {
-      undoReason = "Only the most recent applied job can be undone.";
-    } else {
-      undoReason = "Only a completed job can be undone.";
-    }
-  }
+  const isUndoableType = UNDOABLE_JOB_TYPES.includes(job.type);
+  const isLatest = (await latestUndoableJobId(db, session.shop)) === job.id;
+  const eligibility = undoEligibility(job, isLatest);
+  const canUndo = eligibility.canUndo;
+  const undoReason = eligibility.canUndo ? null : eligibility.reason;
 
   return json({
     job: {
@@ -177,21 +159,11 @@ export async function action({ request, params }: ActionFunctionArgs) {
     );
   }
 
-  if (!UNDOABLE_TYPES.includes(job.type) || !APPLIED_STATUSES.includes(job.status)) {
+  const isLatest = (await latestUndoableJobId(db, session.shop)) === job.id;
+  const eligibility = undoEligibility(job, isLatest);
+  if (!eligibility.canUndo) {
     return json(
-      { error: apiError("CONFLICT", "This job cannot be undone.", requestId).error },
-      { status: 409 },
-    );
-  }
-  if (job.undoneByJobId) {
-    return json(
-      { error: apiError("CONFLICT", "This job was already undone.", requestId).error },
-      { status: 409 },
-    );
-  }
-  if ((await latestUndoableJobId(session.shop)) !== job.id) {
-    return json(
-      { error: apiError("CONFLICT", "A newer job has been applied.", requestId).error },
+      { error: apiError("CONFLICT", eligibility.reason, requestId).error },
       { status: 409 },
     );
   }
