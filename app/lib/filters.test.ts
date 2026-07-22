@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { compileFilter, filterFromParams, isEmptyFilter } from "./filters";
+import { compileFilter, filterFromParams, isEmptyFilter, parseSavedFilter } from "./filters";
 
 describe("compileFilter", () => {
   it("compiles each field to its search term", () => {
@@ -65,5 +65,28 @@ describe("isEmptyFilter", () => {
   it("is true only when no field is set", () => {
     expect(isEmptyFilter({})).toBe(true);
     expect(isEmptyFilter({ vendor: "Acme" })).toBe(false);
+  });
+});
+
+describe("parseSavedFilter", () => {
+  it("reads a well-formed stored filter", () => {
+    const json = JSON.stringify({ vendor: "Acme", status: "ACTIVE", tag: "sale" });
+    expect(parseSavedFilter(json)).toEqual({ vendor: "Acme", status: "ACTIVE", tag: "sale" });
+  });
+
+  it("drops unknown and blank fields from a stale definition", () => {
+    const json = JSON.stringify({ vendor: "Acme", legacy: true, tag: "  " });
+    expect(parseSavedFilter(json)).toEqual({ vendor: "Acme" });
+  });
+
+  it("drops a status that is no longer valid", () => {
+    expect(parseSavedFilter(JSON.stringify({ status: "SOLD" }))).toEqual({});
+  });
+
+  it("returns null for unreadable or non-object JSON", () => {
+    expect(parseSavedFilter("{not json")).toBeNull();
+    expect(parseSavedFilter("null")).toBeNull();
+    expect(parseSavedFilter("42")).toBeNull();
+    expect(parseSavedFilter('"a string"')).toBeNull();
   });
 });

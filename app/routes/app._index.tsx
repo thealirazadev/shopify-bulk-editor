@@ -28,7 +28,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import db from "~/db.server";
 import { apiError, newRequestId } from "~/lib/errors";
-import { compileFilter, filterFromParams, isEmptyFilter } from "~/lib/filters";
+import { compileFilter, filterFromParams, isEmptyFilter, parseSavedFilter } from "~/lib/filters";
 import type { ProductFilter } from "~/lib/filters";
 import { logger } from "~/lib/logger.server";
 import { authenticate } from "~/shopify.server";
@@ -101,11 +101,16 @@ async function loadSavedFilters(shop: string) {
     orderBy: { name: "asc" },
   });
 
-  return rows.map((row) => ({
-    id: row.id,
-    name: row.name,
-    filter: JSON.parse(row.filterJson) as ProductFilter,
-  }));
+  const parsed: { id: string; name: string; filter: ProductFilter }[] = [];
+  for (const row of rows) {
+    const filter = parseSavedFilter(row.filterJson);
+    if (!filter) {
+      logger.warn("skipping unreadable saved filter", { shop, savedFilterId: row.id });
+      continue;
+    }
+    parsed.push({ id: row.id, name: row.name, filter });
+  }
+  return parsed;
 }
 
 export async function loader({ request }: LoaderFunctionArgs) {

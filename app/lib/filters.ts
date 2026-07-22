@@ -83,3 +83,35 @@ export function filterFromParams(params: URLSearchParams): ProductFilter {
 export function isEmptyFilter(filter: ProductFilter): boolean {
   return !filter.collectionId && !filter.vendor && !filter.tag && !filter.status && !filter.title;
 }
+
+// Defensively read a stored saved-filter definition. Returns a filter limited to
+// known, currently-valid fields, or null when the JSON is unreadable. This keeps
+// a single corrupt or legacy row from throwing inside the product-browser loader
+// and taking the whole page down with it.
+export function parseSavedFilter(filterJson: string): ProductFilter | null {
+  let raw: unknown;
+  try {
+    raw = JSON.parse(filterJson);
+  } catch {
+    return null;
+  }
+  if (typeof raw !== "object" || raw === null) return null;
+
+  const record = raw as Record<string, unknown>;
+  const text = (value: unknown): string | undefined =>
+    typeof value === "string" && value.trim() ? value : undefined;
+
+  const filter: ProductFilter = {};
+  const collectionId = text(record.collectionId);
+  const vendor = text(record.vendor);
+  const tag = text(record.tag);
+  const title = text(record.title);
+  if (collectionId) filter.collectionId = collectionId;
+  if (vendor) filter.vendor = vendor;
+  if (tag) filter.tag = tag;
+  if (title) filter.title = title;
+  if (typeof record.status === "string" && isProductStatus(record.status)) {
+    filter.status = record.status;
+  }
+  return filter;
+}
