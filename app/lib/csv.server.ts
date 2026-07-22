@@ -158,6 +158,19 @@ export function parseImportCsv(content: string): ImportParseResult {
     return fail("Missing required column: product_id and variant_id are required.");
   }
 
+  // A known column appearing twice is rejected rather than silently resolved to
+  // the first occurrence, which would drop the values under the later duplicate.
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const name of header) {
+    if (!KNOWN_COLUMNS.has(name)) continue;
+    if (seen.has(name)) duplicates.add(name);
+    seen.add(name);
+  }
+  if (duplicates.size > 0) {
+    return fail(`Duplicate column: ${[...duplicates].join(", ")} appears more than once.`);
+  }
+
   const dataRows = rows.slice(1);
   if (dataRows.length === 0) return fail("The file has no data rows.");
   if (dataRows.length > JOB_ITEM_CAP) {

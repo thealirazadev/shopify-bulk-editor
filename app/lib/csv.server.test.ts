@@ -157,6 +157,17 @@ describe("parseImportCsv", () => {
     expect(result.invalidRows[0].message).toContain("conflicts with row 1");
   });
 
+  it("rejects a file with a duplicated known column", () => {
+    const csv = [
+      "product_id,variant_id,price,price",
+      "gid://shopify/Product/1,gid://shopify/ProductVariant/11,10.00,20.00",
+    ].join("\n");
+    const result = parseImportCsv(csv);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("Duplicate column");
+    expect(result.error).toContain("price");
+  });
+
   it("reports unknown columns as a warning", () => {
     const csv = [
       "product_id,variant_id,price,color",
