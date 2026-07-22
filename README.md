@@ -9,6 +9,24 @@ metafield), previews every before/after value, applies the change as a tracked b
 undo the last applied job. It also round-trips CSV: export filtered products, then re-import an edited
 file with row-level validation and a dry-run preview before anything is written.
 
+## Screenshots
+
+> **How these were produced.** Every image below was rendered **locally against a mocked Admin
+> GraphQL API** — the app's real Remix route components (unchanged) mounted with Polaris and fed the
+> same kind of mocked responses the test suite uses — **not a live Shopify store**. The surrounding
+> Shopify admin chrome and App Bridge are absent because they require the live embedded admin; what
+> you see is the app's own Polaris UI.
+
+| Product browser | Preview gate (before → after) |
+| --- | --- |
+| ![Product browser: a Polaris IndexTable of seven products with status, vendor, tags, variant-count and price-range columns, plus saved-filter tabs and search](docs/images/product-browser.png) | ![Preview changes screen: a table of staged products showing each price and tag change as before-arrow-after with per-row Will change / Unchanged outcome badges](docs/images/edit-preview.png) |
+| _Product browser with the index table populated from mocked Admin API data — rendered locally, not a live store._ | _The staged before → after preview gate, rendered locally against a mocked Admin API rather than a live store._ |
+
+| Job outcomes and undo | CSV import |
+| --- | --- |
+| ![Job detail: total/applied/failed/skipped counts, an Undo this job button, and a per-item outcome table with Applied, Skipped (changed) and Failed badges](docs/images/job-detail.png) | ![CSV import screen: a drop zone for a CSV file and a column reference table describing product_id, variant_id, price, status and tags](docs/images/csv-import.png) |
+| _A completed job's per-item outcomes and undo control, rendered locally against a mocked Admin API rather than a live store._ | _The CSV import screen, rendered locally against a mocked Admin API rather than a live store._ |
+
 ## Features
 
 - **Product browser** with collection, vendor, tag, status, and title filters (AND-combined), cursor
