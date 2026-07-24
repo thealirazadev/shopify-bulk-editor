@@ -113,6 +113,8 @@ export interface ImportParseResult {
 }
 
 const KNOWN_COLUMNS = new Set(CSV_COLUMNS as unknown as string[]);
+// The columns an import may change; product_id/variant_id only identify the target.
+const EDITABLE_COLUMNS = ["price", "status", "tags"];
 const STATUS_VALUES = ["ACTIVE", "DRAFT", "ARCHIVED"];
 // Money with at most two decimal places. Shopify rounds prices to the currency's
 // decimal precision, so accepting three-plus decimals here would let the stored
@@ -169,6 +171,13 @@ export function parseImportCsv(content: string): ImportParseResult {
   }
   if (duplicates.size > 0) {
     return fail(`Duplicate column: ${[...duplicates].join(", ")} appears more than once.`);
+  }
+
+  // Without at least one editable column the import can change nothing; every row
+  // would stage as skipped_unchanged, so reject it up front rather than let the
+  // merchant apply a silent no-op.
+  if (!EDITABLE_COLUMNS.some((name) => header.includes(name))) {
+    return fail("The file has no editable columns. Include at least one of: price, status, tags.");
   }
 
   const dataRows = rows.slice(1);

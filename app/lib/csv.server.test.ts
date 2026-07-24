@@ -90,6 +90,16 @@ describe("parseImportCsv", () => {
     expect(parseImportCsv(header).ok).toBe(false);
   });
 
+  it("rejects a file whose only columns are the required identifiers", () => {
+    const csv = [
+      "product_id,variant_id",
+      "gid://shopify/Product/1,gid://shopify/ProductVariant/11",
+    ].join("\n");
+    const result = parseImportCsv(csv);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("no editable columns");
+  });
+
   it("treats an empty or whitespace-only file as empty", () => {
     expect(parseImportCsv("").error).toContain("empty");
     expect(parseImportCsv("   \n  \n").error).toContain("empty");
