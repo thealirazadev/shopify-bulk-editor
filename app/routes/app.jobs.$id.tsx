@@ -281,6 +281,13 @@ export default function JobDetail() {
     data.job.createdAt,
   ).toLocaleString()}`;
 
+  // Polling advances the counts and swaps the progress bar for the final tally
+  // without any spoken cue; announce running progress and the terminal outcome.
+  const srStatus = active
+    ? `Job ${data.job.status}. Processing ${data.job.processedCount} of ${data.job.totalItems}.`
+    : `Job ${data.job.status}. ${data.job.successCount} applied, ${data.job.failedCount} failed, ` +
+      `${data.job.skippedCount} skipped.`;
+
   return (
     <Page
       title={title}
@@ -293,6 +300,11 @@ export default function JobDetail() {
     >
       <Layout>
         <Layout.Section>
+          <div role="status" aria-live="polite" aria-atomic="true">
+            <Text as="span" visuallyHidden>
+              {srStatus}
+            </Text>
+          </div>
           <BlockStack gap="400">
             {data.job.errorMessage ? (
               <Banner tone="critical" title="Job error">
