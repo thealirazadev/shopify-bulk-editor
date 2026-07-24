@@ -347,6 +347,15 @@ function StagingProgress({ total, processed }: { total: number; processed: numbe
             Preparing preview — {total > 0 ? `${processed} of ${total}` : "working"}
           </Text>
           <ProgressBar progress={pct} />
+          {/* Polling updates the numbers above silently; mirror them into a live
+              region so screen readers hear progress and completion. */}
+          <div role="status" aria-live="polite" aria-atomic="true">
+            <Text as="span" visuallyHidden>
+              {total > 0
+                ? `Preparing preview. ${processed} of ${total} products processed.`
+                : "Preparing preview."}
+            </Text>
+          </div>
         </BlockStack>
       </Card>
     </Page>
@@ -608,7 +617,12 @@ function OperationCard({
           <Text as="h2" variant="headingSm">
             {op.field[0].toUpperCase() + op.field.slice(1)}
           </Text>
-          <Button tone="critical" variant="plain" onClick={onRemove}>
+          <Button
+            tone="critical"
+            variant="plain"
+            onClick={onRemove}
+            accessibilityLabel={`Remove ${op.field} operation`}
+          >
             Remove
           </Button>
         </InlineStack>
