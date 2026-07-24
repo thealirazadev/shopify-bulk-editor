@@ -4,6 +4,26 @@ Running log of what is done, what is in flight, and decisions worth remembering.
 
 ## Completed
 
+- 2026-07-25 — Repo-maturity and Tier-2 pass (101 → 109 tests, all gates green; CI + CodeQL green on
+  push). Eleven granular commits. Repo-maturity docs the public repo lacked: `CONTRIBUTING.md` (real
+  npm ci / prisma:generate / typecheck / lint / test / build commands, mocked-Admin-API note so no
+  store is needed for tests, PR and safety-invariant expectations), `CODE_OF_CONDUCT.md` (Contributor
+  Covenant 2.1), `.github/ISSUE_TEMPLATE/` (bug + feature + config.yml with security/contributing
+  links), `.github/PULL_REQUEST_TEMPLATE.md` (gate + safety-invariant checklist), `.editorconfig`
+  (matches `.prettierrc`: 2-space, 100-col, LF), `CHANGELOG.md` (Keep a Changelog, one honest
+  `[Unreleased]` entry; no invented versions — repo has no tags). Code: `csv.server` now rejects an
+  import whose only columns are `product_id`/`variant_id` ("no editable columns") instead of letting
+  the merchant apply a silent all-skipped no-op. New coverage for genuinely untested thin paths: CSV
+  import per-row status fill-in + empty-tags-clears-vs-absent-tags-untouched semantics, and multi-
+  variant price math + combined-op change detection (every prior price test was single-variant).
+  Accessibility on the app's custom markup: distinct `accessibilityLabel` on each edit operation's
+  otherwise-identical "Remove" button, and `role="status"` aria-live regions announcing polling
+  progress + terminal outcome on the job-detail and staging screens (Polaris announces neither). No
+  product-write safety invariant touched; Admin API stayed mocked; no new dependency. Note: a piped
+  `npm run lint | tail` briefly masked eslint's exit code and let a comment-position error into a
+  local commit; caught before push and the last three commits were rebuilt clean (use `${PIPESTATUS}`
+  or unpiped lint for gate checks).
+
 - 2026-07-23 — Hardening pass (73 → 101 tests, all gates green throughout). Eight granular commits:
   1. `csv.server` — import price validation accepted three-plus decimal places, so the stored
      after-value could drift from Shopify's rounded money value and later trip stale/undo checks; the
