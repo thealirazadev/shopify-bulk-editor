@@ -215,4 +215,50 @@ describe("parseImportCsv", () => {
     const result = parseImportCsv(csv);
     expect(result.unknownColumns).toEqual(["color"]);
   });
+
+  it("treats an empty tags cell as a clear-all, distinct from an absent tags column", () => {
+    const cleared = parseImportCsv(
+      [
+        "product_id,variant_id,tags",
+        "gid://shopify/Product/1,gid://shopify/ProductVariant/11,",
+      ].join("\n"),
+    );
+    // Tags column present but empty means "replace tags with nothing".
+    expect(cleared.products[0].tags).toEqual([]);
+
+    const untouched = parseImportCsv(
+      [
+        "product_id,variant_id,price",
+        "gid://shopify/Product/1,gid://shopify/ProductVariant/11,10.00",
+      ].join("\n"),
+    );
+    // No tags column at all means "leave tags as they are".
+    expect(untouched.products[0].tags).toBeNull();
+  });
+
+  it("carries a product-level-only change with no variant price row", () => {
+    const result = parseImportCsv(
+      [
+        "product_id,variant_id,status",
+        "gid://shopify/Product/1,gid://shopify/ProductVariant/11,DRAFT",
+      ].join("\n"),
+    );
+    expect(result.ok).toBe(true);
+    expect(result.products[0].variants).toEqual([]);
+    expect(result.products[0].status).toBe("DRAFT");
+  });
+
+  it("lets a later row fill a product-level status the first row left blank", () => {
+    const result = parseImportCsv(
+      [
+        "product_id,variant_id,status,price",
+        "gid://shopify/Product/1,gid://shopify/ProductVariant/11,,10.00",
+        "gid://shopify/Product/1,gid://shopify/ProductVariant/12,ACTIVE,12.00",
+      ].join("\n"),
+    );
+    expect(result.invalidRows).toHaveLength(0);
+    expect(result.products).toHaveLength(1);
+    expect(result.products[0].status).toBe("ACTIVE");
+    expect(result.products[0].variants).toHaveLength(2);
+  });
 });
