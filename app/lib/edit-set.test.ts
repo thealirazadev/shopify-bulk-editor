@@ -177,6 +177,59 @@ describe("computeItem price math", () => {
     const result = computeItem(state(), set([{ field: "price", op: "set", value: "10" }]));
     expect(result.status).toBe("skipped_unchanged");
   });
+
+  it("adjusts every variant of a multi-variant product", () => {
+    const multi = state({
+      variants: [
+        { id: "gid://shopify/ProductVariant/1", price: "10.00" },
+        { id: "gid://shopify/ProductVariant/2", price: "20.00" },
+      ],
+    });
+    const result = computeItem(multi, set([{ field: "price", op: "adjust_percent", value: "10" }]));
+    expect(result.status).toBe("pending");
+    expect(result.after.variants).toEqual([
+      { id: "gid://shopify/ProductVariant/1", price: "11.00" },
+      { id: "gid://shopify/ProductVariant/2", price: "22.00" },
+    ]);
+  });
+
+  it("flags the whole item invalid when any one variant would go negative", () => {
+    const multi = state({
+      variants: [
+        { id: "gid://shopify/ProductVariant/1", price: "10.00" },
+        { id: "gid://shopify/ProductVariant/2", price: "20.00" },
+      ],
+    });
+    const result = computeItem(multi, set([{ field: "price", op: "adjust_amount", value: "-15" }]));
+    expect(result.status).toBe("invalid");
+    expect(result.message).toContain("negative");
+  });
+});
+
+describe("computeItem combined operations", () => {
+  it("stays pending when one op is a no-op but another changes", () => {
+    // status is already ACTIVE (no change) but the added tag is new (changes).
+    const result = computeItem(
+      state(),
+      set([
+        { field: "status", op: "set", value: "ACTIVE" },
+        { field: "tags", op: "add", value: "clearance" },
+      ]),
+    );
+    expect(result.status).toBe("pending");
+  });
+
+  it("is skipped_unchanged only when every op is a no-op", () => {
+    // status already ACTIVE and the tag "sale" is already present.
+    const result = computeItem(
+      state(),
+      set([
+        { field: "status", op: "set", value: "ACTIVE" },
+        { field: "tags", op: "add", value: "sale" },
+      ]),
+    );
+    expect(result.status).toBe("skipped_unchanged");
+  });
 });
 
 describe("computeItem tags", () => {
