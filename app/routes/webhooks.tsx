@@ -62,6 +62,7 @@ export async function action({ request }: ActionFunctionArgs) {
         await db.jobItem.deleteMany({ where: { jobId: { in: jobIds } } });
         await db.job.deleteMany({ where: { shop } });
         await db.savedFilter.deleteMany({ where: { shop } });
+        await db.savedEditSet.deleteMany({ where: { shop } });
         await db.session.deleteMany({ where: { shop } });
         logger.info("deleted all shop data", { shop, topic });
         break;
