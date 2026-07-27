@@ -38,6 +38,20 @@ model SavedFilter {
   @@unique([shop, name])
 }
 
+// Per-shop named edit-set presets: a reusable field/operation/value
+// configuration for the edit-set builder. editSetJson holds a validateEditSet
+// payload; loading one only fills the builder and still goes through preview.
+model SavedEditSet {
+  id          String   @id @default(cuid())
+  shop        String
+  name        String
+  editSetJson String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([shop, name])
+}
+
 // A unit of bulk work. SQLite has no Prisma enums, so type/status are strings
 // with allowed values enforced in app/lib and documented in docs/architecture.md.
 model Job {
