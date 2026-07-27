@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs, SerializeFrom } from "@remix-run/node";
 import { json, redirect } from "@remix-run/node";
 import {
+  useFetcher,
   useLoaderData,
   useNavigate,
   useNavigation,
@@ -34,6 +35,7 @@ import { validateEditSet } from "~/lib/edit-set";
 import type { Snapshot } from "~/lib/edit-set";
 import { apiError, newRequestId } from "~/lib/errors";
 import type { Selection } from "~/lib/jobs";
+import { saveEditSet } from "~/lib/saved-edit-set";
 import { logger } from "~/lib/logger.server";
 import { authenticate } from "~/shopify.server";
 
@@ -213,6 +215,22 @@ export async function action({ request, params }: ActionFunctionArgs) {
   const intent = String(formData.get("intent") ?? "");
 
   try {
+    if (intent === "saveEditSet") {
+      // Saving a reusable set writes only to SavedEditSet; it never stages,
+      // queues, or applies. Loading one later still goes through preview.
+      let raw: unknown = null;
+      try {
+        raw = JSON.parse(String(formData.get("editSetJson") ?? "null"));
+      } catch {
+        raw = null;
+      }
+      const result = await saveEditSet(db, session.shop, String(formData.get("name") ?? ""), raw);
+      if (!result.ok) {
+        return json({ ok: false as const, errors: result.errors }, { status: 400 });
+      }
+      return json({ ok: true as const, savedEditSetId: result.id });
+    }
+
     if (intent === "stage") {
       const parsed = validateEditSet(JSON.parse(String(formData.get("editSetJson") ?? "null")));
       if (!parsed.valid) {
@@ -519,9 +537,29 @@ function Preview({ data }: { data: SerializeFrom<typeof loader> }) {
 function Builder({ selectionText }: { selectionText: string }) {
   const submit = useSubmit();
   const navigation = useNavigation();
+  const saveFetcher = useFetcher<typeof action>();
   const [ops, setOps] = useState<OpDraft[]>([defaultOp("price")]);
   const [errors, setErrors] = useState<string[]>([]);
+  const [saveOpen, setSaveOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [savedMsg, setSavedMsg] = useState<string | null>(null);
   const busy = navigation.state !== "idle";
+  const saveBusy = saveFetcher.state !== "idle";
+
+  const saveData = saveFetcher.data;
+  const saveErrors = saveData && !saveData.ok && "errors" in saveData ? saveData.errors : [];
+
+  // Close the save modal and confirm success once the save resolves. Depends
+  // only on the fetcher's lifecycle, so re-opening the modal does not re-trigger.
+  useEffect(() => {
+    if (saveFetcher.state === "idle" && saveFetcher.data?.ok) {
+      setSaveOpen(false);
+      setName("");
+      setSavedMsg(
+        "Saved as an edit-set. Load it from any new bulk edit; it still needs a preview.",
+      );
+    }
+  }, [saveFetcher.state, saveFetcher.data]);
 
   const usedFields = useMemo(() => new Set(ops.map((op) => op.field)), [ops]);
   const addOp = useCallback(() => {
@@ -548,6 +586,26 @@ function Builder({ selectionText }: { selectionText: string }) {
     submit({ intent: "stage", editSetJson: JSON.stringify(editSet) }, { method: "post" });
   }, [ops, submit]);
 
+  // Validate the current config before opening the save modal so an invalid set
+  // surfaces the same builder errors rather than a modal that cannot succeed.
+  const openSave = useCallback(() => {
+    const validation = validateEditSet({ operations: ops.map(serialize) });
+    if (!validation.valid) {
+      setErrors(validation.errors);
+      return;
+    }
+    setErrors([]);
+    setSaveOpen(true);
+  }, [ops]);
+
+  const confirmSave = useCallback(() => {
+    const editSet = { operations: ops.map(serialize) };
+    saveFetcher.submit(
+      { intent: "saveEditSet", name, editSetJson: JSON.stringify(editSet) },
+      { method: "post" },
+    );
+  }, [ops, name, saveFetcher]);
+
   return (
     <Page
       title="New bulk edit"
@@ -560,11 +618,18 @@ function Builder({ selectionText }: { selectionText: string }) {
       }}
       secondaryActions={[
         { content: "Add operation", onAction: addOp, disabled: ops.length >= ALL_FIELDS.length },
+        { content: "Save as edit-set", onAction: openSave, disabled: ops.length === 0 },
       ]}
     >
       <Layout>
         <Layout.Section>
           <BlockStack gap="400">
+            {savedMsg ? (
+              <Banner tone="success" onDismiss={() => setSavedMsg(null)}>
+                <p>{savedMsg}</p>
+              </Banner>
+            ) : null}
+
             {errors.length > 0 ? (
               <Banner tone="critical" title="Fix these before previewing">
                 <BlockStack gap="100">
@@ -589,6 +654,43 @@ function Builder({ selectionText }: { selectionText: string }) {
           </BlockStack>
         </Layout.Section>
       </Layout>
+
+      <Modal
+        open={saveOpen}
+        onClose={() => setSaveOpen(false)}
+        title="Save as edit-set"
+        primaryAction={{
+          content: "Save",
+          loading: saveBusy,
+          disabled: name.trim().length === 0,
+          onAction: confirmSave,
+        }}
+        secondaryActions={[{ content: "Cancel", onAction: () => setSaveOpen(false) }]}
+      >
+        <Modal.Section>
+          <BlockStack gap="300">
+            {saveErrors.length > 0 ? (
+              <Banner tone="critical" title="Could not save">
+                <BlockStack gap="100">
+                  {saveErrors.map((message) => (
+                    <Text as="p" key={message}>
+                      {message}
+                    </Text>
+                  ))}
+                </BlockStack>
+              </Banner>
+            ) : null}
+            <TextField
+              label="Name"
+              autoComplete="off"
+              value={name}
+              onChange={setName}
+              maxLength={50}
+              helpText="Reuse this configuration later from any new bulk edit. Loading it still requires a preview before apply."
+            />
+          </BlockStack>
+        </Modal.Section>
+      </Modal>
     </Page>
   );
 }
