@@ -32,10 +32,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import db from "~/db.server";
 import { validateEditSet } from "~/lib/edit-set";
-import type { Snapshot } from "~/lib/edit-set";
+import type { EditOperation, Snapshot } from "~/lib/edit-set";
 import { apiError, newRequestId } from "~/lib/errors";
 import type { Selection } from "~/lib/jobs";
-import { saveEditSet } from "~/lib/saved-edit-set";
+import { listEditSets, saveEditSet } from "~/lib/saved-edit-set";
 import { logger } from "~/lib/logger.server";
 import { authenticate } from "~/shopify.server";
 
@@ -143,6 +143,23 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     errorMessage: job.errorMessage,
   };
 
+  // Only the builder (draft) offers saved edit-sets; skip the query otherwise.
+  let savedEditSets: { id: string; name: string; operations: EditOperation[] }[] = [];
+  if (job.status === "draft") {
+    const listed = await listEditSets(db, session.shop);
+    if (listed.skippedIds.length > 0) {
+      logger.warn("skipping unreadable saved edit-sets", {
+        shop: session.shop,
+        ids: listed.skippedIds,
+      });
+    }
+    savedEditSets = listed.sets.map((set) => ({
+      id: set.id,
+      name: set.name,
+      operations: set.editSet.operations,
+    }));
+  }
+
   if (job.status !== "staged") {
     return json({
       job: jobSummary,
@@ -153,6 +170,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
       hasNext: false,
       itemStatus,
       duplicateOfJobId: null as string | null,
+      savedEditSets,
     });
   }
 
@@ -196,6 +214,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
     hasNext: rows.length > PAGE_SIZE,
     itemStatus,
     duplicateOfJobId,
+    savedEditSets,
   });
 }
 
@@ -339,6 +358,24 @@ function serialize(op: OpDraft) {
   return { field: op.field, op: op.op, value: op.value };
 }
 
+// Inverse of serialize: turn a stored/validated operation back into a builder
+// draft so a saved edit-set can populate the form. Fields the operation does not
+// carry keep their field defaults.
+function toOpDraft(op: EditOperation): OpDraft {
+  const base = defaultOp(op.field);
+  if (op.field === "metafield") {
+    return {
+      ...base,
+      op: "set",
+      namespace: op.namespace,
+      key: op.key,
+      type: op.type,
+      value: op.value,
+    };
+  }
+  return { ...base, op: op.op, value: op.value };
+}
+
 const ALL_FIELDS: Field[] = ["price", "status", "tags", "metafield"];
 
 export default function EditJob() {
@@ -350,7 +387,7 @@ export default function EditJob() {
   if (data.job.status === "staged") {
     return <Preview data={data} />;
   }
-  return <Builder selectionText={data.selectionText} />;
+  return <Builder selectionText={data.selectionText} savedEditSets={data.savedEditSets} />;
 }
 
 function StagingProgress({ total, processed }: { total: number; processed: number }) {
@@ -534,7 +571,19 @@ function Preview({ data }: { data: SerializeFrom<typeof loader> }) {
   );
 }
 
-function Builder({ selectionText }: { selectionText: string }) {
+interface SavedEditSetOption {
+  id: string;
+  name: string;
+  operations: EditOperation[];
+}
+
+function Builder({
+  selectionText,
+  savedEditSets,
+}: {
+  selectionText: string;
+  savedEditSets: SavedEditSetOption[];
+}) {
   const submit = useSubmit();
   const navigation = useNavigation();
   const saveFetcher = useFetcher<typeof action>();
@@ -606,6 +655,19 @@ function Builder({ selectionText }: { selectionText: string }) {
     );
   }, [ops, name, saveFetcher]);
 
+  // Load-into-builder only fills the form; the draft job still needs a preview
+  // (stage) before it can be applied.
+  const loadSet = useCallback(
+    (id: string) => {
+      const set = savedEditSets.find((entry) => entry.id === id);
+      if (!set) return;
+      setOps(set.operations.map(toOpDraft));
+      setErrors([]);
+      setSavedMsg(null);
+    },
+    [savedEditSets],
+  );
+
   return (
     <Page
       title="New bulk edit"
@@ -640,6 +702,24 @@ function Builder({ selectionText }: { selectionText: string }) {
                   ))}
                 </BlockStack>
               </Banner>
+            ) : null}
+
+            {savedEditSets.length > 0 ? (
+              <Card>
+                <BlockStack gap="200">
+                  <Select
+                    label="Load a saved edit-set"
+                    placeholder="Select a saved edit-set"
+                    options={savedEditSets.map((set) => ({ label: set.name, value: set.id }))}
+                    onChange={loadSet}
+                    value=""
+                  />
+                  <Text as="p" tone="subdued">
+                    Loading replaces the operations below. You still preview the changes before
+                    anything is applied.
+                  </Text>
+                </BlockStack>
+              </Card>
             ) : null}
 
             {ops.map((op, index) => (
