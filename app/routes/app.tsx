@@ -26,6 +26,7 @@ export default function AppLayout() {
           Products
         </Link>
         <Link to="/app/jobs">Jobs</Link>
+        <Link to="/app/edit-sets">Edit sets</Link>
         <Link to="/app/import">Import</Link>
       </NavMenu>
       <Outlet />
