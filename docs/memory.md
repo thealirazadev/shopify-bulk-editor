@@ -4,6 +4,26 @@ Running log of what is done, what is in flight, and decisions worth remembering.
 
 ## Completed
 
+- 2026-07-27: Phase 5 (saved edit-sets) complete and green (109 to 119 tests; typecheck, lint, build
+  all clean throughout). A merchant can save a named edit-set (the builder's field/operation/value
+  config) and reuse it later against a new selection: save, list, load-into-builder, rename, delete.
+  New `SavedEditSet` model (`(shop, name)` unique, `editSetJson`, `createdAt`/`updatedAt`), migration
+  `20260727060324_add_saved_edit_set`. New `app/lib/saved-edit-set.ts` store follows the `undo.ts`
+  injectable-db pattern (type-only Prisma import, `db` passed in) so it stays unit-testable and never
+  imports `db.server`: `saveEditSet`/`listEditSets`/`renameEditSet`/`deleteEditSet`/`parseSavedEditSet`
+  /`summarizeEditSet`, all shop-scoped, reusing the existing `validateEditSet` for both save and load
+  (no second validation path). Save is a `saveEditSet` action intent on the builder route (fetcher +
+  modal); load-into-builder is client-only (populates the builder `OpDraft[]` via a new `toOpDraft`
+  inverse of `serialize`) and a new `/app/edit-sets` management page (IndexTable, rename/delete modals,
+  nav link) does list/rename/delete. Safety invariant preserved and tested: the store touches no `Job`
+  and loading only fills a `draft`, so the sole path to a write is still `draft -> staging (preview) ->
+  queued (explicit apply) -> worker`; a saved/loaded set cannot bypass the preview gate. Shop-redact
+  webhook now also deletes the shop's saved edit-sets. Ten new tests in `saved-edit-set.test.ts`
+  (throwaway SQLite): save/load round-trip fidelity, shop scoping (no cross-shop list/rename/delete),
+  same-validation reject, duplicate/empty/over-long name, rename + collision, idempotent delete, and
+  the never-touches-a-job guard. No product-write safety invariant weakened; Admin API stayed mocked;
+  no new runtime dependency.
+
 - 2026-07-25 — Repo-maturity and Tier-2 pass (101 → 109 tests, all gates green; CI + CodeQL green on
   push). Eleven granular commits. Repo-maturity docs the public repo lacked: `CONTRIBUTING.md` (real
   npm ci / prisma:generate / typecheck / lint / test / build commands, mocked-Admin-API note so no

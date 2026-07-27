@@ -33,6 +33,10 @@ file with row-level validation and a dry-run preview before anything is written.
   pagination, and per-shop saved filters.
 - **Edit set builder** — price set / adjust-percent / adjust-amount, status, tag add/remove, and
   metafield set, validated on the server.
+- **Saved edit-sets**: save a named edit-set (the field / operation / value configuration) and reuse
+  it against a new product selection; load it into the builder, rename it, or delete it. Per-shop and
+  validated the same way; a loaded set still goes through the staged preview before anything is
+  applied.
 - **Staged preview** — a hard gate. Every targeted product shows its before → after values; nothing is
   written until the merchant applies the preview.
 - **Tracked apply jobs** — a background worker applies changes one product at a time with cost-aware
