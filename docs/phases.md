@@ -146,6 +146,54 @@ Close the operational gaps before launch: cancellation, cleanup, and a full unha
 
 ---
 
+## Phase 5: Saved edit-sets
+
+### Goal
+A merchant can save a named edit-set (the field + operation + value configuration built in the edit-set
+builder) and reuse it later against a new product selection, without rebuilding it each time. Save,
+list, load into the builder, rename, and delete. Loading a saved set populates the builder only; it
+still goes through the mandatory staged preview before anything is applied.
+
+### Definition of done (hard requirements)
+- **Preview gate untouched:** loading a saved set only fills the builder's operations (a `draft` job);
+  it never stages, queues, or applies. The one path to a write is still `draft -> staging (preview) ->
+  queued (explicit apply) -> worker`. No saved-edit-set code creates or mutates a `Job`.
+- **Shop scoping:** every read and write is scoped to the session shop; one shop can neither list, load,
+  rename, nor delete another shop's edit-sets. `(shop, name)` is unique per shop.
+- **Same validation:** a saved config is stored only if it passes the existing `validateEditSet`, and a
+  loaded config passes the identical `validateEditSet` before it can be staged. No second validation
+  path.
+- **Round-trip fidelity:** saving then loading a set yields the same normalized operations.
+- Save (from the builder), list, load-into-builder, rename, and delete all work; friendly errors for a
+  duplicate name, an empty/too-long name, and an unreadable stored row (skipped, logged, page survives).
+- Shop redact deletes the shop's saved edit-sets alongside its other data.
+- `npm run typecheck`, `npm run lint`, `npm run test`, `npm run build` all pass; existing tests stay
+  green; new tests cover the four properties above.
+
+### Manual test checklist
+- [ ] In the builder, configure a couple of operations, Save as edit-set with a name; it appears in the
+  saved-set list.
+- [ ] Start a new bulk edit over a different selection; load the saved set; the builder fills with the
+  saved operations; Preview then Apply as normal.
+- [ ] Loading a set never applies on its own; the Apply button only appears after the preview stage.
+- [ ] Rename a set; the new name shows and a duplicate name is refused with a field error.
+- [ ] Delete a set; it disappears; deleting is idempotent.
+- [ ] Save with an empty name and a 51-character name; both refused. Save an invalid config (e.g. a
+  price with no value); refused with the same messages the builder shows.
+- [ ] A second dev store sees none of the first store's saved sets.
+
+### Commits
+1. `docs: add saved edit-sets phase to phases.md`
+2. `feat(db): add saved edit-set model and migration`
+3. `feat(edits): add shop-scoped saved edit-set store with tests`
+4. `feat(edits): save the current builder config as a named edit-set`
+5. `feat(edits): load a saved edit-set into the builder`
+6. `feat(edit-sets): add saved edit-set management page`
+7. `feat(webhooks): delete saved edit-sets on shop redact`
+8. `docs: document saved edit-sets in readme and memory`
+
+---
+
 ## Phase verification
 
 Run after every phase before marking it done.
