@@ -41,7 +41,7 @@ failed, and any relevant structured log lines (redact shop domain and IDs if nee
 ## Impact on safety invariants
 
 Did any product write happen without a preview, without a captured before-value, or in a
-way that could not be undone? If so, describe it — these are treated as high priority.
+way that could not be undone? If so, describe it - these are treated as high priority.
 
 ## Environment
 

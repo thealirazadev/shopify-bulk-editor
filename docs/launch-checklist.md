@@ -31,7 +31,7 @@ Work through before shipping to production. Nothing here should be assumed done.
 - [ ] `bulk_operations/finish` handling and the polling fallback both verified in production (one export with webhooks healthy, one with delivery blocked).
 - [ ] Scopes in `shopify.app.toml` and `SCOPES` match actual usage (`read_products,write_products`); nothing unused requested.
 - [ ] `app/uninstalled` cleanup verified (sessions removed, running jobs canceled).
-- [ ] A full-scale rehearsal on a staging store: 1,000+ item apply, export, import, undo — counts and values verified.
+- [ ] A full-scale rehearsal on a staging store: 1,000+ item apply, export, import, undo - counts and values verified.
 
 ## Data and safety
 - [ ] Production database migrated with `prisma migrate deploy`; backups configured.

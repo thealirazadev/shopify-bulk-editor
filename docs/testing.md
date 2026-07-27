@@ -8,11 +8,11 @@ The safety guarantees live in pure logic, so that logic gets dense unit coverage
 
 The load-bearing modules, all pure or mockable at the boundary:
 
-- `lib/filters.ts` — filter object to Shopify query string: each field, combinations, quoting/escaping of values with spaces and quotes.
-- `lib/edit-set.ts` — operation validation (every rule in the table in `docs/api-contracts.md`); after-value computation: percent/amount price math, half-up rounding to 2 decimals, negative-result flagging, tag add/remove deltas (including add-existing and remove-absent), unchanged detection.
-- `lib/csv.server.ts` — export serialization (quoting, tag joining, formula-injection escaping); import parsing/validation: every error case with exact `row N, column X` messages, cross-row product-level conflicts, unknown-column warnings, row cap.
-- `lib/undo.ts` — inverse-item computation: price/status/metafield restore, tag delta inversion, applied-items-only.
-- `worker/throttle.server.ts` — pacing math from cost extensions: wait computation, estimate updates, no-wait when budget suffices.
+- `lib/filters.ts` - filter object to Shopify query string: each field, combinations, quoting/escaping of values with spaces and quotes.
+- `lib/edit-set.ts` - operation validation (every rule in the table in `docs/api-contracts.md`); after-value computation: percent/amount price math, half-up rounding to 2 decimals, negative-result flagging, tag add/remove deltas (including add-existing and remove-absent), unchanged detection.
+- `lib/csv.server.ts` - export serialization (quoting, tag joining, formula-injection escaping); import parsing/validation: every error case with exact `row N, column X` messages, cross-row product-level conflicts, unknown-column warnings, row cap.
+- `lib/undo.ts` - inverse-item computation: price/status/metafield restore, tag delta inversion, applied-items-only.
+- `worker/throttle.server.ts` - pacing math from cost extensions: wait computation, estimate updates, no-wait when budget suffices.
 - `lib/errors.ts` and webhook topic dispatch mapping.
 
 ### Integration tests (Vitest, real SQLite, mocked admin client)

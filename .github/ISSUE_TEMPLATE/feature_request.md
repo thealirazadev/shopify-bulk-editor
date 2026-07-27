@@ -14,7 +14,7 @@ merchant workflow, not just the feature.
 ## Proposed solution
 
 What you would like to see. Keep in mind the preview-gate, before-value, and undo
-guarantees — a proposal must not bypass them.
+guarantees - a proposal must not bypass them.
 
 ## Alternatives considered
 

@@ -12,15 +12,15 @@ file with row-level validation and a dry-run preview before anything is written.
 ## Screenshots
 
 > **How these were produced.** Every image below was rendered **locally against a mocked Admin
-> GraphQL API** — the app's real Remix route components (unchanged) mounted with Polaris and fed the
-> same kind of mocked responses the test suite uses — **not a live Shopify store**. The surrounding
+> GraphQL API** - the app's real Remix route components (unchanged) mounted with Polaris and fed the
+> same kind of mocked responses the test suite uses - **not a live Shopify store**. The surrounding
 > Shopify admin chrome and App Bridge are absent because they require the live embedded admin; what
 > you see is the app's own Polaris UI.
 
 | Product browser | Preview gate (before → after) |
 | --- | --- |
 | ![Product browser: a Polaris IndexTable of seven products with status, vendor, tags, variant-count and price-range columns, plus saved-filter tabs and search](docs/images/product-browser.png) | ![Preview changes screen: a table of staged products showing each price and tag change as before-arrow-after with per-row Will change / Unchanged outcome badges](docs/images/edit-preview.png) |
-| _Product browser with the index table populated from mocked Admin API data — rendered locally, not a live store._ | _The staged before → after preview gate, rendered locally against a mocked Admin API rather than a live store._ |
+| _Product browser with the index table populated from mocked Admin API data - rendered locally, not a live store._ | _The staged before → after preview gate, rendered locally against a mocked Admin API rather than a live store._ |
 
 | Job outcomes and undo | CSV import |
 | --- | --- |
@@ -31,15 +31,15 @@ file with row-level validation and a dry-run preview before anything is written.
 
 - **Product browser** with collection, vendor, tag, status, and title filters (AND-combined), cursor
   pagination, and per-shop saved filters.
-- **Edit set builder** — price set / adjust-percent / adjust-amount, status, tag add/remove, and
+- **Edit set builder** - price set / adjust-percent / adjust-amount, status, tag add/remove, and
   metafield set, validated on the server.
 - **Saved edit-sets**: save a named edit-set (the field / operation / value configuration) and reuse
   it against a new product selection; load it into the builder, rename it, or delete it. Per-shop and
   validated the same way; a loaded set still goes through the staged preview before anything is
   applied.
-- **Staged preview** — a hard gate. Every targeted product shows its before → after values; nothing is
+- **Staged preview** - a hard gate. Every targeted product shows its before → after values; nothing is
   written until the merchant applies the preview.
-- **Tracked apply jobs** — a background worker applies changes one product at a time with cost-aware
+- **Tracked apply jobs** - a background worker applies changes one product at a time with cost-aware
   throttling, per-item outcomes (applied / failed / skipped-stale / skipped-unchanged), live progress,
   captured before-values, and crash-safe resume.
 - **CSV export** via a Shopify bulk operation, completed by the `bulk_operations/finish` webhook with a
@@ -76,7 +76,7 @@ Applies run ordinary Admin GraphQL mutations one product at a time, paced by the
 - **Mutation shape.** `bulkOperationRunMutation` requires a mutation taking a single input
   variable per JSONL line. `tagsAdd`/`tagsRemove` (id + tags) and `productVariantsBulkUpdate`
   (productId + variants) do not fit that shape without wrapper compromises.
-- **Scale fits.** At roughly 10 cost points per mutation against a 50–100 points/second
+- **Scale fits.** At roughly 10 cost points per mutation against a 50-100 points/second
   restore rate, a 1,000-item job completes in a few minutes.
 - **Cost of the choice:** throughput. Catalogs of tens of thousands of products would favour
   `bulkOperationRunMutation`; that is out of scope and recorded as a known limit.
@@ -86,7 +86,7 @@ Applies run ordinary Admin GraphQL mutations one product at a time, paced by the
 Export _does_ use bulk machinery: `bulkOperationRunQuery` is the right tool for reading an
 unbounded product set without pagination cost. Completion is event-driven through the
 `bulk_operations/finish` webhook, and the worker also polls the `BulkOperation` node every 15
-seconds for any running export so a missed webhook cannot strand a job. The two race safely —
+seconds for any running export so a missed webhook cannot strand a job. The two race safely -
 the `running → completed` transition is guarded, so the loser sees a non-running job and does
 nothing.
 
@@ -114,7 +114,7 @@ is a line item on `docs/launch-checklist.md`.
 
 Only the shop's most recent `completed` / `completed_with_errors` edit or import job can be
 undone, and only once (`undoOfJobId` is unique; `undoneByJobId` closes it). No redo, and no undo
-of arbitrary historical jobs — an explicit non-goal in the PRD, because older jobs' before-values
+of arbitrary historical jobs - an explicit non-goal in the PRD, because older jobs' before-values
 are no longer a truthful picture of the catalog. Undo is not a blind rollback: it is computed
 from stored before-values, staged as a normal job behind the same preview gate, and any product
 whose live value changed since the apply is skipped and reported rather than overwritten. Tags
@@ -129,7 +129,7 @@ job's wall-clock time predictable and bounds the preview and result pages.
 ### CSV v1 carries price, status, and tags only
 
 Metafields are edited through the UI edit set only. Import values are absolute rather than
-adjustments, staging diffs them against live data, and a SHA-256 file hash flags a re-import —
+adjustments, staging diffs them against live data, and a SHA-256 file hash flags a re-import -
 so re-applying the same file never compounds a change.
 
 ## Benchmark
@@ -143,9 +143,9 @@ runs; the ranges span 7 repeats of the whole benchmark.
 
 | Rows            | File size | Parse + validate (median) | Throughput         |
 | --------------- | --------- | ------------------------- | ------------------ |
-| 1,000           | 138 KB    | 6.5–8.9 ms                | 112k–154k rows/sec |
-| 2,500           | 350 KB    | 13.5–21.7 ms              | 115k–186k rows/sec |
-| 5,000 (job cap) | 708 KB    | 26.1–41.6 ms              | 120k–191k rows/sec |
+| 1,000           | 138 KB    | 6.5-8.9 ms                | 112k-154k rows/sec |
+| 2,500           | 350 KB    | 13.5-21.7 ms              | 115k-186k rows/sec |
+| 5,000 (job cap) | 708 KB    | 26.1-41.6 ms              | 120k-191k rows/sec |
 
 Reproduce with `npm run bench`: `benchmark/generate-csv.ts` builds an export-shaped synthetic
 file and `benchmark/csv-import.bench.ts` times the real parser. Parsing and validating a

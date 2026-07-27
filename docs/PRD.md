@@ -23,10 +23,10 @@ Applying a staged preview enqueues a job processed by a background worker using 
 Export the currently filtered products to CSV (one row per variant) using a Shopify bulk operation query. Completion is detected via the `bulk_operations/finish` webhook with a polling fallback, then the result is converted to CSV and offered for download from the job screen.
 
 ### 5. CSV import with validation and dry-run preview
-Re-import an edited CSV. Every row is validated with precise `row N, column X` error messages (unknown IDs, malformed prices, invalid status, tag rules). Valid rows become a staged job that goes through the same before/after preview as a UI edit — the import is a dry run until the merchant applies it. Re-importing an already-applied file warns via file hash, and because rows carry absolute values and unchanged rows are skipped, re-applying never compounds an adjustment.
+Re-import an edited CSV. Every row is validated with precise `row N, column X` error messages (unknown IDs, malformed prices, invalid status, tag rules). Valid rows become a staged job that goes through the same before/after preview as a UI edit - the import is a dry run until the merchant applies it. Re-importing an already-applied file warns via file hash, and because rows carry absolute values and unchanged rows are skipped, re-applying never compounds an adjustment.
 
 ### 6. Job history with per-item results
-A per-shop list of all jobs (edits, imports, exports, undos) with status and counts. The job detail screen shows every item's outcome — applied, failed with reason, skipped with reason — filterable by outcome.
+A per-shop list of all jobs (edits, imports, exports, undos) with status and counts. The job detail screen shows every item's outcome - applied, failed with reason, skipped with reason - filterable by outcome.
 
 ### 7. Undo the last applied job
 The most recent applied edit or import job can be undone. The undo is computed from the stored before-values (inverse operation for tags, before-value restore for price/status/metafield), presented as its own staged preview, and applied as a normal job. Items whose live value changed since the original apply are skipped and reported, never blindly overwritten.
@@ -39,7 +39,7 @@ The most recent applied edit or import job can be undone. The undo is computed f
 - No multi-store sync or cross-store operations.
 - No metafield columns in CSV v1; metafields are edited through the UI edit set only.
 - No multi-currency or price-list editing; prices are the shop's default currency variant price.
-- No redo (undoing an undo) and no undo of arbitrary historical jobs — only the most recent applied job.
+- No redo (undoing an undo) and no undo of arbitrary historical jobs - only the most recent applied job.
 - No REST Admin API usage; GraphQL only.
 
 ## Success criteria per core feature

@@ -7,7 +7,7 @@ long-lived release branches.
 
 ## Reporting a vulnerability
 
-Please report suspected vulnerabilities privately — do not open a public issue.
+Please report suspected vulnerabilities privately - do not open a public issue.
 
 - Use [GitHub private vulnerability reporting](https://github.com/thealirazadev/shopify-bulk-editor/security/advisories/new)
   for this repository.
@@ -22,7 +22,7 @@ This app runs as an embedded Shopify Admin app with `read_products,write_product
 scope and writes to a merchant's catalog. Reports that are especially in scope:
 
 - Authentication or session-handling flaws in the embedded app or OAuth routes.
-- Cross-shop data access — any path where one shop can read or modify another
+- Cross-shop data access - any path where one shop can read or modify another
   shop's jobs, saved filters, or export files. All job, item, and export-download
   queries are scoped by `shop`; a bypass is a valid report.
 - Webhook HMAC verification bypass.
@@ -33,7 +33,7 @@ scope and writes to a merchant's catalog. Reports that are especially in scope:
 
 ## Out of scope
 
-- Vulnerabilities in Shopify's own APIs or Admin UI — report those to Shopify.
+- Vulnerabilities in Shopify's own APIs or Admin UI - report those to Shopify.
 - Findings that require a merchant to install a malicious app or to already hold
   valid admin credentials for the store.
 - Missing hardening headers on non-embedded routes with no demonstrated impact.

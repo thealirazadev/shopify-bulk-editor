@@ -15,7 +15,7 @@ Install on a dev store and usefully browse, filter, and save filters over real p
 
 ### Definition of done
 - `npm install`, `npm run lint`, `npm run typecheck`, `npm run test`, `npm run build` all pass.
-- OAuth completes on a fresh dev store; a `Session` row exists; app renders embedded with Polaris and App Bridge nav (Products, Jobs, Import — Jobs/Import may be empty shells).
+- OAuth completes on a fresh dev store; a `Session` row exists; app renders embedded with Polaris and App Bridge nav (Products, Jobs, Import - Jobs/Import may be empty shells).
 - `/webhooks` verifies HMAC; `app/uninstalled` clears sessions; compliance topics return 200; `bulk_operations/finish` is registered (handler logs and no-ops until Phase 2).
 - Product browser filters by collection, vendor, tag, status, and title (AND-combined), paginates past 250 products, and shows an empty state for no matches.
 - Saved filters: create (unique name per shop), apply, delete.
@@ -46,7 +46,7 @@ Install on a dev store and usefully browse, filter, and save filters over real p
 
 ---
 
-## Phase 2: Bulk engine — jobs, edit sets, preview, apply, CSV round-trip
+## Phase 2: Bulk engine - jobs, edit sets, preview, apply, CSV round-trip
 
 The core of the product and all senior differentiators: the job worker, staged previews with before-values, cost-aware applies with per-item results, bulk-query export with webhook + polling completion, and validated CSV import with dry-run preview and idempotent re-apply.
 
@@ -211,4 +211,4 @@ Run after every phase before marking it done.
 
 ## Backlog
 
-_(empty — record out-of-scope requests here with a one-line description and date)_
+_(empty - record out-of-scope requests here with a one-line description and date)_

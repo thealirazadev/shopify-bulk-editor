@@ -13,8 +13,8 @@ No versioned release has been tagged yet; everything below is unreleased and dev
 
 - Product browser with collection, vendor, tag, status, and title filters (AND-combined),
   cursor pagination past 250 products, and per-shop saved filters.
-- Edit set builder — price set / adjust-percent / adjust-amount, status, tag add/remove, and
-  metafield set — validated on the server.
+- Edit set builder - price set / adjust-percent / adjust-amount, status, tag add/remove, and
+  metafield set - validated on the server.
 - Staged before/after preview as a hard write gate: no code path writes product data except the
   worker processing a job that reached `queued` from `staged` via the explicit apply intent.
 - Tracked apply jobs run by a DB-backed in-process worker: cost-aware throttling from GraphQL

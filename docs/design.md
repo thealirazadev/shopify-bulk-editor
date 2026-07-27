@@ -24,7 +24,7 @@ The embedded admin UI is built entirely with Shopify Polaris. The app must feel 
 - Field-level validation errors via each input's `error` prop.
 
 ### Staging progress (same route, status `staging`)
-- `Card` with `ProgressBar` and `Text` ("Preparing preview — 240 of 512 products"), polling every 2 seconds. `Banner` (tone `critical`) with retry guidance if staging fails.
+- `Card` with `ProgressBar` and `Text` ("Preparing preview - 240 of 512 products"), polling every 2 seconds. `Banner` (tone `critical`) with retry guidance if staging fails.
 
 ### Preview (same route, status `staged`)
 - `Page` titled "Preview changes" with a summary `Banner` (tone `info`): "212 products will change, 3 skipped (already match), 2 invalid".
@@ -50,7 +50,7 @@ The embedded admin UI is built entirely with Shopify Polaris. The app must feel 
 
 ### Error and empty states
 - Remix `ErrorBoundary` renders a Polaris `Page` + `Banner` (tone `critical`) with a friendly message and a way back.
-- `EmptyState` for: no products matched, no saved filters, no jobs yet, preview with zero changes ("Nothing to change — all selected products already match").
+- `EmptyState` for: no products matched, no saved filters, no jobs yet, preview with zero changes ("Nothing to change - all selected products already match").
 
 ## Component states
 
@@ -63,7 +63,7 @@ Long-running states are first-class here: polling screens must render meaningful
 - Rely on Polaris components for WCAG 2.1 AA contrast, focus states, and semantics; never override focus outlines or reduce contrast.
 - Every input has a visible associated label; placeholders are never the only label.
 - All actions keyboard-reachable; no focus traps; `Modal` returns focus on close; Polaris default tab order preserved.
-- Status changes announced via `Banner`/`Toast`; outcome badges pair color with text ("Failed", "Skipped") — never color alone.
+- Status changes announced via `Banner`/`Toast`; outcome badges pair color with text ("Failed", "Skipped") - never color alone.
 - App Bridge `NavMenu` and navigation APIs for route changes so Admin URL and history stay correct; no raw `<a>` for embedded cross-route navigation.
 - Headings use Polaris `Text` variants in logical order: one page title, then section headings.
 - Before/after preview cells include visually hidden "was / becomes" text so screen readers announce the direction of change, not just two numbers.

@@ -18,7 +18,7 @@ All JSON error responses use one shape:
 
 Codes: `UNAUTHENTICATED`, `INVALID_INPUT`, `NOT_FOUND`, `CONFLICT` (illegal job-state transition, e.g. applying a non-staged job or undoing an already-undone job), `LIMIT_EXCEEDED` (selection or CSV over the 5,000-item cap, upload over 5 MB), `UPSTREAM_ERROR` (Shopify/API failure), `INTERNAL`. `message` is friendly and safe to show; `requestId` correlates with the server log line. Stack traces, GraphQL `userErrors` arrays, and upstream bodies are logged, never returned.
 
-Per-item failures inside a job are **not** errors in this format — they are data (`JobItem.status` + `message`) returned by job loaders, because a partially failed job is a successful HTTP response.
+Per-item failures inside a job are **not** errors in this format - they are data (`JobItem.status` + `message`) returned by job loaders, because a partially failed job is a successful HTTP response.
 
 ## Shared JSON shapes
 
@@ -50,7 +50,7 @@ Selections resolving to more than 5,000 products are rejected with `LIMIT_EXCEED
 
 ### Edit set (`editSetJson`)
 
-1–4 operations, at most one per field.
+1-4 operations, at most one per field.
 
 ```json
 {
@@ -70,8 +70,8 @@ Server-side validation (`lib/edit-set.ts`):
 | --- | --- | --- |
 | `price` | `set`, `adjust_percent`, `adjust_amount` | `set`: decimal ≥ 0. `adjust_percent`: -99 to 1000. `adjust_amount`: any decimal; a resulting price < 0 flags the item `invalid`. Results round half-up to 2 decimals. |
 | `status` | `set` | One of `ACTIVE`, `DRAFT`, `ARCHIVED`. |
-| `tags` | `add`, `remove` | 1–255 chars, no commas, trimmed, non-empty. |
-| `metafield` | `set` | namespace/key: `[A-Za-z0-9_-]`, 2–64 chars. `type` one of `single_line_text_field`, `number_integer`, `number_decimal`, `boolean`; value must parse as that type. |
+| `tags` | `add`, `remove` | 1-255 chars, no commas, trimmed, non-empty. |
+| `metafield` | `set` | namespace/key: `[A-Za-z0-9_-]`, 2-64 chars. `type` one of `single_line_text_field`, `number_integer`, `number_decimal`, `boolean`; value must parse as that type. |
 
 ### Job summary (returned by every job loader; the polling shape)
 
@@ -121,12 +121,12 @@ Identical to shopify-remix-starter: `GET|POST /auth/*` (`auth.$.tsx`) delegates 
 
 ## Embedded routes
 
-All routes below require `authenticate.admin(request)`; unauthenticated requests redirect into OAuth. Every job/filter read and write is additionally scoped to the authenticated `session.shop` — a job ID belonging to another shop returns `NOT_FOUND`.
+All routes below require `authenticate.admin(request)`; unauthenticated requests redirect into OAuth. Every job/filter read and write is additionally scoped to the authenticated `session.shop` - a job ID belonging to another shop returns `NOT_FOUND`.
 
-### `GET /app` — `app.tsx` layout
+### `GET /app` - `app.tsx` layout
 Loader returns `apiKey` for App Bridge and nav items (Products, Jobs, Import).
 
-### `GET /app` — `app._index.tsx` product browser
+### `GET /app` - `app._index.tsx` product browser
 - **Query params:** filter fields (`collectionId`, `vendor`, `tag`, `status`, `title`), `cursor` (pagination), `savedFilterId`.
 - **Returns:**
 
@@ -142,50 +142,50 @@ Loader returns `apiKey` for App Bridge and nav items (Products, Jobs, Import).
 }
 ```
 
-### `POST /app` — `app._index.tsx` actions
+### `POST /app` - `app._index.tsx` actions
 Discriminated by `intent` form field:
-- `saveFilter` — `name` (1–50 chars, unique per shop) + current filter. Returns `{ "ok": true, "savedFilter": { ... } }`. Duplicate name: `INVALID_INPUT`.
-- `deleteFilter` — `savedFilterId`. Returns `{ "ok": true }`.
-- `startExport` — current filter object. Creates an `export` job (`queued`), starts the bulk query. Returns `{ "ok": true, "jobId": "..." }`; UI shows a toast linking to the job.
+- `saveFilter` - `name` (1-50 chars, unique per shop) + current filter. Returns `{ "ok": true, "savedFilter": { ... } }`. Duplicate name: `INVALID_INPUT`.
+- `deleteFilter` - `savedFilterId`. Returns `{ "ok": true }`.
+- `startExport` - current filter object. Creates an `export` job (`queued`), starts the bulk query. Returns `{ "ok": true, "jobId": "..." }`; UI shows a toast linking to the job.
 
-### `POST /app/edits/new` — `app.edits.new.tsx` (action only)
+### `POST /app/edits/new` - `app.edits.new.tsx` (action only)
 - **Input:** `selectionJson`.
 - **Behavior:** Validates the selection, creates a `Job` (`type: "edit"`, `status: "draft"`).
 - **Success:** Redirect to `/app/edits/:id`.
 - **Errors:** `INVALID_INPUT` (empty selection), `LIMIT_EXCEEDED`.
 
-### `GET /app/edits/:id` — `app.edits.$id.tsx`
+### `GET /app/edits/:id` - `app.edits.$id.tsx`
 Renders by job status: `draft` → edit-set builder; `staging` → progress (polls); `staged` → before/after preview with item pagination (`?page=`, 50 items/page, `?itemStatus=` filter); any applied/terminal status → redirect to `/app/jobs/:id`.
 - **Returns:** job summary + `items` page + `counts` per item status. For `csv_import` jobs the preview also includes `invalid` items with their `csvRow` and message, and `duplicateOfJobId` when the file hash matches a previously applied import.
 
-### `POST /app/edits/:id` — intents
-- `stage` — `editSetJson`. Valid only from `draft` or `staged` (re-stage after changing operations). Validates operations, sets `staging`, worker takes over. Returns `{ "ok": true }`.
-- `apply` — Valid only from `staged`. Transitions to `queued`. Returns `{ "ok": true }`. Double-submit is safe: the second request hits a non-`staged` job and gets `CONFLICT`.
-- `discard` — Valid from `draft`/`staged`. Sets `discarded`. Returns `{ "ok": true }`.
+### `POST /app/edits/:id` - intents
+- `stage` - `editSetJson`. Valid only from `draft` or `staged` (re-stage after changing operations). Validates operations, sets `staging`, worker takes over. Returns `{ "ok": true }`.
+- `apply` - Valid only from `staged`. Transitions to `queued`. Returns `{ "ok": true }`. Double-submit is safe: the second request hits a non-`staged` job and gets `CONFLICT`.
+- `discard` - Valid from `draft`/`staged`. Sets `discarded`. Returns `{ "ok": true }`.
 
-### `GET /app/import` / `POST /app/import` — `app.import.tsx`
+### `GET /app/import` / `POST /app/import` - `app.import.tsx`
 - **GET:** upload form plus the CSV column reference.
 - **POST:** multipart form, field `file`. Limits: 5 MB, `.csv`, 5,000 data rows (`LIMIT_EXCEEDED` otherwise).
 - **Behavior:** Parses and validates every row (see CSV contract below); creates a `csv_import` job in `staging` (worker diffs valid rows against live values). Redirects to `/app/edits/:id` for the dry-run preview. A file whose SHA-256 matches an applied import for this shop still stages, but the preview shows a duplicate warning.
 - **Errors:** `INVALID_INPUT` (not CSV, missing required columns, zero data rows) with a message naming the problem.
 
-### `GET /app/jobs` — `app.jobs._index.tsx`
+### `GET /app/jobs` - `app.jobs._index.tsx`
 - **Query params:** `cursor`.
 - **Returns:** `{ "jobs": [ <job summary>, ... ], "pageInfo": { ... } }`, newest first, this shop only.
 
-### `GET /app/jobs/:id` — `app.jobs.$id.tsx`
+### `GET /app/jobs/:id` - `app.jobs.$id.tsx`
 - **Returns:** job summary + paginated items (`?page=`, `?itemStatus=`) + `canUndo` (true only when this is the shop's most recent `completed`/`completed_with_errors` job of type `edit` or `csv_import` and `undoneByJobId` is null) + `canCancel` (status `queued` or `running`) + `downloadReady` (export with `resultPath` set).
 
-### `POST /app/jobs/:id` — intents
-- `undo` — Valid only when `canUndo`. Creates a new `Job` (`type: "undo"`, `undoOfJobId: :id`, `status: "staging"`); items are computed from the original's `applied` items with before/after inverted. Redirects to `/app/edits/:newId` for preview. Errors: `CONFLICT` with a reason (`"A newer job has been applied"`, `"This job was already undone"`).
-- `cancel` — Valid from `queued`/`running`. Sets `canceled`; a running worker stops at the next item boundary (already-applied items stay applied and remain undoable). Returns `{ "ok": true }`.
+### `POST /app/jobs/:id` - intents
+- `undo` - Valid only when `canUndo`. Creates a new `Job` (`type: "undo"`, `undoOfJobId: :id`, `status: "staging"`); items are computed from the original's `applied` items with before/after inverted. Redirects to `/app/edits/:newId` for preview. Errors: `CONFLICT` with a reason (`"A newer job has been applied"`, `"This job was already undone"`).
+- `cancel` - Valid from `queued`/`running`. Sets `canceled`; a running worker stops at the next item boundary (already-applied items stay applied and remain undoable). Returns `{ "ok": true }`.
 
-### `GET /app/jobs/:id/download` — `app.jobs.$id.download.tsx`
+### `GET /app/jobs/:id/download` - `app.jobs.$id.download.tsx`
 Streams the export CSV (`Content-Type: text/csv`, attachment filename `products-export-<jobId>.csv`). `NOT_FOUND` until `resultPath` is set or after the 7-day retention cleanup.
 
 ## Webhook route
 
-### `POST /webhooks` — `webhooks.tsx`
+### `POST /webhooks` - `webhooks.tsx`
 HMAC via `authenticate.webhook(request)`; invalid HMAC → `401`, logged. Unknown topics → `200`, logged at `warn`. Handler failures that should be retried → `500`.
 
 | Topic | Purpose | Handler action |
@@ -197,7 +197,7 @@ HMAC via `authenticate.webhook(request)`; invalid HMAC → `401`, logged. Unknow
 | `CUSTOMERS_REDACT` | GDPR delete customer | Log and acknowledge; no customer data stored. |
 | `SHOP_REDACT` | GDPR delete shop (48h after uninstall) | Delete the shop's `SavedFilter`, `Job`, `JobItem` rows and export files. |
 
-### Example payload — `bulk_operations/finish`
+### Example payload - `bulk_operations/finish`
 
 ```json
 {
@@ -319,4 +319,4 @@ mutation SetMetafield($metafields: [MetafieldsSetInput!]!) {
 }
 ```
 
-An edit set touching multiple fields runs the needed mutations for one product before moving to the next; if any mutation for a product fails, the item is `failed` with the field named in the message, and mutations already applied for that product are recorded in the item's message (no automatic per-item rollback — the job-level undo covers reversal).
+An edit set touching multiple fields runs the needed mutations for one product before moving to the next; if any mutation for a product fails, the item is `failed` with the field named in the message, and mutations already applied for that product are recorded in the item's message (no automatic per-item rollback - the job-level undo covers reversal).
