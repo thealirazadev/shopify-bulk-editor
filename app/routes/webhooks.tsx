@@ -1,3 +1,5 @@
+import { rm } from "node:fs/promises";
+
 import type { ActionFunctionArgs } from "@remix-run/node";
 import { json } from "@remix-run/node";
 
@@ -56,8 +58,17 @@ export async function action({ request }: ActionFunctionArgs) {
       }
 
       case "shop-redact": {
-        const jobs = await db.job.findMany({ where: { shop }, select: { id: true } });
+        const jobs = await db.job.findMany({
+          where: { shop },
+          select: { id: true, resultPath: true },
+        });
         const jobIds = jobs.map((jobRow) => jobRow.id);
+
+        // Export CSVs hold the shop's product data on disk; remove them before
+        // the rows that point at them are gone.
+        for (const jobRow of jobs) {
+          if (jobRow.resultPath) await rm(jobRow.resultPath, { force: true });
+        }
 
         await db.jobItem.deleteMany({ where: { jobId: { in: jobIds } } });
         await db.job.deleteMany({ where: { shop } });
