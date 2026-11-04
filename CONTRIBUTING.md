@@ -34,7 +34,7 @@ four commands (see `.github/workflows/ci.yml`) and must stay green.
 ```
 npm run typecheck   # tsc --noEmit
 npm run lint        # ESLint (Shopify flat config), no warnings
-npm run test        # Vitest (currently 101 tests)
+npm run test        # Vitest
 npm run build       # remix vite:build
 ```
 
