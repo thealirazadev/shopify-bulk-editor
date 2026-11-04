@@ -97,12 +97,7 @@ export async function action({ request }: ActionFunctionArgs) {
 
   try {
     const fileHash = createHash("sha256").update(content).digest("hex");
-    const jobRow = await db.job.create({
-      data: { shop: session.shop, type: "csv_import", status: "staging", fileName, fileHash },
-    });
-
     const validItems = parsed.products.map((product) => ({
-      jobId: jobRow.id,
       productGid: product.productGid,
       productTitle: product.productTitle,
       csvRow: product.firstRow,
@@ -110,7 +105,6 @@ export async function action({ request }: ActionFunctionArgs) {
       afterJson: JSON.stringify(buildAfter(product)),
     }));
     const invalidItems = parsed.invalidRows.map((row) => ({
-      jobId: jobRow.id,
       productGid: "",
       productTitle: row.productTitle,
       csvRow: row.csvRow,
@@ -118,10 +112,18 @@ export async function action({ request }: ActionFunctionArgs) {
       message: row.message,
     }));
 
-    await db.jobItem.createMany({ data: [...validItems, ...invalidItems] });
-    await db.job.update({
-      where: { id: jobRow.id },
-      data: { totalItems: validItems.length + invalidItems.length },
+    // Create the job and its items in one write: a "staging" job is claimable
+    // by the worker immediately, so it must never exist without its items.
+    const jobRow = await db.job.create({
+      data: {
+        shop: session.shop,
+        type: "csv_import",
+        status: "staging",
+        fileName,
+        fileHash,
+        totalItems: validItems.length + invalidItems.length,
+        items: { createMany: { data: [...validItems, ...invalidItems] } },
+      },
     });
 
     return redirect(`/app/edits/${jobRow.id}`);
