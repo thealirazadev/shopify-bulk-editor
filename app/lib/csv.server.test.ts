@@ -177,6 +177,23 @@ describe("parseImportCsv", () => {
     expect(result.products.map((product) => product.variants[0].price)).toEqual(["10.5", "10"]);
   });
 
+  it("flags rows whose product or variant id is not a Shopify gid", () => {
+    const csv = [
+      header,
+      "123,gid://shopify/ProductVariant/11,Shirt,ACTIVE,sale,10.00",
+      "gid://shopify/Product/2,gid://shopify/Product/2,Hat,ACTIVE,sale,10.00",
+      "gid://shopify/Product/3,gid://shopify/ProductVariant/31,Cap,ACTIVE,sale,10.00",
+    ].join("\n");
+    const result = parseImportCsv(csv);
+    expect(result.invalidRows.map((row) => row.message)).toEqual([
+      'row 1, column product_id: "123" is not a product id',
+      'row 2, column variant_id: "gid://shopify/Product/2" is not a variant id',
+    ]);
+    expect(result.products.map((product) => product.productGid)).toEqual([
+      "gid://shopify/Product/3",
+    ]);
+  });
+
   it("reports an invalid status", () => {
     const csv = [
       header,

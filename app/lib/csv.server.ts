@@ -119,6 +119,8 @@ const STATUS_VALUES = ["ACTIVE", "DRAFT", "ARCHIVED"];
 // Money with at most two decimal places. Shopify rounds prices to the currency's
 // decimal precision, so accepting three-plus decimals here would let the stored
 // after-value drift from what the store keeps, breaking later stale/undo checks.
+const PRODUCT_GID = /^gid:\/\/shopify\/Product\/\d+$/;
+const VARIANT_GID = /^gid:\/\/shopify\/ProductVariant\/\d+$/;
 const AMOUNT = /^\d+(\.\d{1,2})?$/;
 const OVER_PRECISION = /^\d+\.\d{3,}$/;
 
@@ -209,6 +211,16 @@ export function parseImportCsv(content: string): ImportParseResult {
 
     if (!productGid || !variantId) {
       invalid(`row ${csvRow}, column ${productGid ? "variant_id" : "product_id"}: required`);
+      return;
+    }
+    // A malformed id would make Shopify reject the whole staging lookup, not
+    // just this row, so catch it here.
+    if (!PRODUCT_GID.test(productGid)) {
+      invalid(`row ${csvRow}, column product_id: "${productGid}" is not a product id`);
+      return;
+    }
+    if (!VARIANT_GID.test(variantId)) {
+      invalid(`row ${csvRow}, column variant_id: "${variantId}" is not a variant id`);
       return;
     }
 
