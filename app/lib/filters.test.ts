@@ -34,6 +34,12 @@ describe("compileFilter", () => {
     expect(compileFilter({ tag: "a\\b" })).toBe("tag:'a\\\\b'");
   });
 
+  it("quotes a non-numeric collection id instead of splicing it into the query", () => {
+    expect(compileFilter({ collectionId: "gid://shopify/Collection/42 OR vendor:x" })).toBe(
+      "collection_id:'gid://shopify/Collection/42 OR vendor:x'",
+    );
+  });
+
   it("lowercases every status value", () => {
     expect(compileFilter({ status: "DRAFT" })).toBe("status:draft");
     expect(compileFilter({ status: "ARCHIVED" })).toBe("status:archived");

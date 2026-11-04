@@ -17,10 +17,12 @@ export function isProductStatus(value: string): value is ProductStatus {
   return (STATUS_VALUES as ReadonlyArray<string>).includes(value);
 }
 
-// gid://shopify/Collection/42 -> 42
-function numericId(gid: string): string {
+// gid://shopify/Collection/42 -> 42. Anything that is not a numeric id is
+// quoted so a crafted collectionId cannot add extra search terms.
+function collectionTerm(gid: string): string {
   const parts = gid.split("/");
-  return parts[parts.length - 1];
+  const id = parts[parts.length - 1];
+  return /^\d+$/.test(id) ? id : quote(gid);
 }
 
 // Single-quote a value and escape backslashes and single quotes so a value
@@ -35,7 +37,7 @@ export function compileFilter(filter: ProductFilter): string {
   const terms: string[] = [];
 
   if (filter.collectionId) {
-    terms.push(`collection_id:${numericId(filter.collectionId)}`);
+    terms.push(`collection_id:${collectionTerm(filter.collectionId)}`);
   }
   if (filter.vendor && filter.vendor.trim()) {
     terms.push(`vendor:${quote(filter.vendor.trim())}`);
