@@ -33,6 +33,21 @@ No versioned release has been tagged yet; everything below is unreleased and dev
   security policy, contributing guide, code of conduct, issue and pull-request templates, and a
   CSV parse throughput benchmark.
 
+### Fixed
+
+- Staged edit and import jobs were never picked up by the worker after apply, because staging
+  left the claim heartbeat set.
+- A failed stale-check read now fails only that item instead of the whole job.
+- The worker paces Admin API calls on the requested query cost, which Shopify checks before
+  running a call, so a throttled retry waits long enough.
+- An import job and its items are written together, so the worker cannot stage it half-created.
+- Import rows with a malformed `product_id` or `variant_id` are flagged per row instead of
+  failing the whole staging lookup.
+- Filter-mode selections are validated server-side, and a non-numeric collection id is quoted
+  rather than spliced into the product search query.
+- Shop redact also deletes the shop's export files on disk.
+- A malformed `?page=` param falls back to page 1 instead of erroring.
+
 ### Security
 
 - Cleared 24 of 25 Dependabot alerts (`vite` 5 → 6, `vitest` 2 → 3, transitive `tar`, `esbuild`,
