@@ -36,7 +36,7 @@ function sleep(ms: number): Promise<void> {
 // Claim one job that needs active processing: a fresh staging/queued job, or a
 // running/staging job whose worker died (stale heartbeat). Optimistic guard on
 // the heartbeat so only one claimer wins.
-async function claimNextJob(): Promise<Job | null> {
+export async function claimNextJob(): Promise<Job | null> {
   const staleBefore = new Date(Date.now() - HEARTBEAT_STALE_MS);
 
   const candidate = await db.job.findFirst({

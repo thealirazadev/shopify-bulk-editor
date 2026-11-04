@@ -206,7 +206,9 @@ async function runImportStaging(job: Job, admin: WorkerAdmin, throttle: Throttle
   const total = await db.jobItem.count({ where: { jobId: job.id } });
   await db.job.updateMany({
     where: { id: job.id, status: "staging" },
-    data: { status: "staged", totalItems: total, heartbeatAt: new Date() },
+    // Clear the claim heartbeat: the worker only picks up a queued job whose
+    // heartbeat is null, so leaving it set would strand the job after apply.
+    data: { status: "staged", totalItems: total, heartbeatAt: null },
   });
   logger.info("staged import job", { shop: job.shop, jobId: job.id, totalItems: total });
 }
@@ -265,7 +267,7 @@ export async function runStaging(job: Job, admin: WorkerAdmin, throttle: Throttl
 
   await db.job.updateMany({
     where: { id: job.id, status: "staging" },
-    data: { status: "staged", totalItems: items.length, heartbeatAt: new Date() },
+    data: { status: "staged", totalItems: items.length, heartbeatAt: null },
   });
 
   logger.info("staged edit job", { shop: job.shop, jobId: job.id, totalItems: items.length });
