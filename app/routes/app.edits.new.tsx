@@ -3,7 +3,7 @@ import { json, redirect } from "@remix-run/node";
 
 import db from "~/db.server";
 import { apiError, newRequestId } from "~/lib/errors";
-import type { ProductFilter } from "~/lib/filters";
+import { parseFilterInput } from "~/lib/filters";
 import { JOB_ITEM_CAP } from "~/lib/jobs";
 import type { Selection } from "~/lib/jobs";
 import { logger } from "~/lib/logger.server";
@@ -28,9 +28,9 @@ function parseSelection(raw: string): Selection | null {
   }
 
   if (selection.mode === "filter") {
-    const filter = selection.filter;
-    if (typeof filter !== "object" || filter === null) return null;
-    return { mode: "filter", filter: filter as ProductFilter };
+    const filter = parseFilterInput(selection.filter);
+    if (!filter) return null;
+    return { mode: "filter", filter };
   }
 
   return null;

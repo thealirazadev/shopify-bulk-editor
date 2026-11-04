@@ -82,6 +82,32 @@ export function filterFromParams(params: URLSearchParams): ProductFilter {
   return filter;
 }
 
+// Strictly validate a filter object from a request body. Unknown keys are
+// dropped; a known field with the wrong type or value rejects the whole filter
+// rather than silently widening the selection it describes.
+export function parseFilterInput(raw: unknown): ProductFilter | null {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
+  const record = raw as Record<string, unknown>;
+  const filter: ProductFilter = {};
+
+  for (const key of ["collectionId", "vendor", "tag", "title"] as const) {
+    const value = record[key];
+    if (value === undefined || value === null || value === "") continue;
+    if (typeof value !== "string") return null;
+    filter[key] = value;
+  }
+  if (filter.collectionId && !/^gid:\/\/shopify\/Collection\/\d+$/.test(filter.collectionId)) {
+    return null;
+  }
+
+  const status = record.status;
+  if (status !== undefined && status !== null && status !== "") {
+    if (typeof status !== "string" || !isProductStatus(status)) return null;
+    filter.status = status;
+  }
+  return filter;
+}
+
 export function isEmptyFilter(filter: ProductFilter): boolean {
   return !filter.collectionId && !filter.vendor && !filter.tag && !filter.status && !filter.title;
 }

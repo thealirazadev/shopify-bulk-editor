@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 
-import { compileFilter, filterFromParams, isEmptyFilter, parseSavedFilter } from "./filters";
+import {
+  compileFilter,
+  filterFromParams,
+  isEmptyFilter,
+  parseFilterInput,
+  parseSavedFilter,
+} from "./filters";
 
 describe("compileFilter", () => {
   it("compiles each field to its search term", () => {
@@ -94,5 +100,30 @@ describe("parseSavedFilter", () => {
     expect(parseSavedFilter("null")).toBeNull();
     expect(parseSavedFilter("42")).toBeNull();
     expect(parseSavedFilter('"a string"')).toBeNull();
+  });
+});
+
+describe("parseFilterInput", () => {
+  it("accepts a well-formed filter and drops unknown keys", () => {
+    expect(
+      parseFilterInput({
+        collectionId: "gid://shopify/Collection/42",
+        vendor: "Acme",
+        status: "ACTIVE",
+        extra: "ignored",
+      }),
+    ).toEqual({ collectionId: "gid://shopify/Collection/42", vendor: "Acme", status: "ACTIVE" });
+  });
+
+  it("rejects wrongly typed or invalid fields instead of widening the selection", () => {
+    expect(parseFilterInput({ vendor: 42 })).toBeNull();
+    expect(parseFilterInput({ status: "DELETED" })).toBeNull();
+    expect(parseFilterInput({ collectionId: "42 OR vendor:x" })).toBeNull();
+    expect(parseFilterInput(["vendor"])).toBeNull();
+    expect(parseFilterInput(null)).toBeNull();
+  });
+
+  it("treats empty values as absent", () => {
+    expect(parseFilterInput({ vendor: "", status: "" })).toEqual({});
   });
 });
