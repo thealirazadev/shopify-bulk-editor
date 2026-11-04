@@ -15,6 +15,7 @@ import {
 import type { BadgeProps } from "@shopify/polaris";
 
 import db from "~/db.server";
+import { parsePage } from "~/lib/jobs";
 import { authenticate } from "~/shopify.server";
 
 const PAGE_SIZE = 25;
@@ -42,7 +43,7 @@ const STATUS_TONE: Record<string, BadgeProps["tone"]> = {
 export async function loader({ request }: LoaderFunctionArgs) {
   const { session } = await authenticate.admin(request);
   const url = new URL(request.url);
-  const page = Math.max(1, Number(url.searchParams.get("page") ?? "1"));
+  const page = parsePage(url.searchParams.get("page"));
 
   const rows = await db.job.findMany({
     where: { shop: session.shop },

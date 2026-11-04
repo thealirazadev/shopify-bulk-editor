@@ -51,3 +51,10 @@ export function isTerminal(status: string): boolean {
 
 // The 5,000-item cap on a selection, CSV, or job (docs/api-contracts.md).
 export const JOB_ITEM_CAP = 5000;
+
+// Read a 1-based `?page=` param. Anything that is not a positive integer falls
+// back to the first page instead of reaching Prisma as a NaN or fractional skip.
+export function parsePage(value: string | null): number {
+  const page = Number(value);
+  return Number.isSafeInteger(page) && page >= 1 ? page : 1;
+}

@@ -32,6 +32,7 @@ import { useEffect, useState } from "react";
 
 import db from "~/db.server";
 import { apiError, newRequestId } from "~/lib/errors";
+import { parsePage } from "~/lib/jobs";
 import {
   computeInverseItems,
   latestUndoableJobId,
@@ -60,7 +61,7 @@ export async function loader({ request, params }: LoaderFunctionArgs) {
   }
 
   const url = new URL(request.url);
-  const page = Math.max(1, Number(url.searchParams.get("page") ?? "1"));
+  const page = parsePage(url.searchParams.get("page"));
   const itemStatus = url.searchParams.get("itemStatus");
   const where = { jobId: job.id, ...(itemStatus ? { status: itemStatus } : {}) };
 
