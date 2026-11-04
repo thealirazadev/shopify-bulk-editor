@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import {
   computeWaitSeconds,
@@ -52,6 +52,33 @@ describe("nextEstimate", () => {
 
   it("uses the observed cost when present", () => {
     expect(nextEstimate(12)).toBe(12);
+  });
+});
+
+describe("createThrottler", () => {
+  it("paces on the requested cost, which Shopify needs available before a call runs", async () => {
+    vi.useFakeTimers();
+    try {
+      const throttle = createThrottler();
+      // A THROTTLED response: 50 points left, the call asked for 250, 100/s restore.
+      throttle.record("stage", {
+        actualQueryCost: null,
+        requestedQueryCost: 250,
+        throttleStatus: { maximumAvailable: 1000, currentlyAvailable: 50, restoreRate: 100 },
+      });
+
+      let done = false;
+      const wait = throttle.beforeCall("stage").then(() => {
+        done = true;
+      });
+      await vi.advanceTimersByTimeAsync(1999);
+      expect(done).toBe(false);
+      await vi.advanceTimersByTimeAsync(1);
+      await wait;
+      expect(done).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 

@@ -55,7 +55,10 @@ export function createThrottler() {
     record(op: string, cost: CostExtension | undefined): void {
       if (!cost) return;
       lastStatus = cost.throttleStatus;
-      estimates.set(op, nextEstimate(cost.actualQueryCost));
+      // Shopify admits a call only when the bucket covers its requested cost
+      // (the unused part is refunded afterwards), so pace on the requested cost.
+      // A THROTTLED response carries a requested cost but no actual cost.
+      estimates.set(op, nextEstimate(cost.requestedQueryCost ?? cost.actualQueryCost));
     },
   };
 }

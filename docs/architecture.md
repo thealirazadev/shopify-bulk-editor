@@ -34,7 +34,7 @@ Bulk machinery is still used where it fits: **export uses `bulkOperationRunQuery
 
 ### Cost-aware throttling
 
-Every Admin GraphQL response includes `extensions.cost` (`actualQueryCost`, `throttleStatus.currentlyAvailable`, `throttleStatus.restoreRate`). The worker tracks the last observed throttle status per shop; before each call it estimates the next cost from the last actual cost of the same operation (default 50 points until observed) and, if `currentlyAvailable` is insufficient, sleeps `(needed - available) / restoreRate` seconds. One worker processes one job at a time, so there is no internal contention. A `THROTTLED` GraphQL error, if it still occurs, retries the item once after the computed wait, then marks the item failed.
+Every Admin GraphQL response includes `extensions.cost` (`actualQueryCost`, `throttleStatus.currentlyAvailable`, `throttleStatus.restoreRate`). The worker tracks the last observed throttle status per shop; before each call it estimates the next cost from the last requested cost of the same operation (Shopify only admits a call when the bucket covers its requested cost, refunding the unused part afterwards; default 50 points until observed) and, if `currentlyAvailable` is insufficient, sleeps `(needed - available) / restoreRate` seconds. One worker processes one job at a time, so there is no internal contention. A `THROTTLED` GraphQL error, if it still occurs, retries the item once after the computed wait, then marks the item failed.
 
 ## Decision: DB-backed job table with an in-process worker
 
