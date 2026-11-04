@@ -129,21 +129,23 @@ async function applyItem(
   const before = JSON.parse(item.beforeJson) as Snapshot;
   const after = JSON.parse(item.afterJson) as Snapshot;
 
-  const read = await runGraphql<ApplyReadNode>(admin, throttle, "apply_read", APPLY_READ, {
-    id: item.productGid,
-    ...metafieldReadVars(before),
-  });
-
-  if (!read.node) {
-    return markItem(item.id, "failed", "Product no longer exists.");
-  }
-  if (isStale(before, read.node)) {
-    return markItem(item.id, "skipped_stale", "Value changed since preview.");
-  }
-
   const applied: string[] = [];
 
   try {
+    // The stale-check read is item-level work too: a failed read fails this
+    // item and the job moves on instead of aborting with items left pending.
+    const read = await runGraphql<ApplyReadNode>(admin, throttle, "apply_read", APPLY_READ, {
+      id: item.productGid,
+      ...metafieldReadVars(before),
+    });
+
+    if (!read.node) {
+      return markItem(item.id, "failed", "Product no longer exists.");
+    }
+    if (isStale(before, read.node)) {
+      return markItem(item.id, "skipped_stale", "Value changed since preview.");
+    }
+
     if (after.variants) {
       const data = await runGraphql<{ productVariantsBulkUpdate: { userErrors: UserError[] } }>(
         admin,

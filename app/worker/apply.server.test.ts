@@ -158,6 +158,35 @@ describe("runApply", () => {
     expect(finished?.successCount).toBe(1);
   });
 
+  it("fails only the item whose stale-check read errors and keeps going", async () => {
+    const job = await db.job.create({
+      data: { shop: "test.myshopify.com", type: "edit", status: "queued", totalItems: 2 },
+    });
+    const broken = await seedPriceItem(job.id, "gid://p/20", "gid://v/20", "11.00");
+    const ok = await seedPriceItem(job.id, "gid://p/21", "gid://v/21", "11.00");
+    const base = makeAdmin({
+      "gid://p/21": { status: "ACTIVE", variants: [{ id: "gid://v/21", price: "10.00" }] },
+    });
+    const admin: WorkerAdmin = {
+      graphql: async (query, options) => {
+        if (query.includes("ApplyRead") && options?.variables?.id === "gid://p/20") {
+          const body: GraphQLBody = { errors: [{ message: "Internal error" }], ...COST };
+          return { json: async () => body };
+        }
+        return base.graphql(query, options);
+      },
+    };
+
+    await runApply(job, admin, createThrottler());
+
+    const finished = await db.job.findUnique({ where: { id: job.id } });
+    expect(finished?.status).toBe("completed_with_errors");
+    expect(finished?.failedCount).toBe(1);
+    expect(finished?.successCount).toBe(1);
+    expect((await db.jobItem.findUnique({ where: { id: broken.id } }))?.status).toBe("failed");
+    expect((await db.jobItem.findUnique({ where: { id: ok.id } }))?.status).toBe("applied");
+  });
+
   it("resumes without re-processing already applied items", async () => {
     const job = await db.job.create({
       data: { shop: "test.myshopify.com", type: "edit", status: "running", totalItems: 2 },
