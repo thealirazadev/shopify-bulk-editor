@@ -210,3 +210,7 @@ Running log of what is done, what is in flight, and decisions worth remembering.
   them only in loaders/actions, never in the render path - no app code, auth, or deps were changed.
   The harness lived outside git and was deleted after capture. Every README caption states plainly the
   shots were rendered locally against a mocked Admin API, not a live store.
+- 2026-11-08 - Dependency advisories: vite 6.4.4 plus overrides for body-parser 1.20.9, toml 5.0.1,
+  and qs 6.16.1 closed every high alert without a Remix major upgrade. @types/node moved to 22
+  for the vitest peer range. Remaining: minimatch (medium, needs @remix-run/dev to move) and
+  deepmerge (low, no fix published).
