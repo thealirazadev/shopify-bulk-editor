@@ -3,8 +3,8 @@
 Thanks for taking the time to contribute. This is an embedded Shopify Admin app that
 performs bulk product edits, so the bar for correctness is high: every product write must
 stay behind the preview gate, capture before-values, and be reversible. Please read the
-engineering rules in [`docs/rules.md`](docs/rules.md) and the product intent in
-[`docs/PRD.md`](docs/PRD.md) before opening a pull request.
+design decisions in [`docs/decisions.md`](docs/decisions.md) and the architecture in
+[`docs/architecture.md`](docs/architecture.md) before opening a pull request.
 
 ## Prerequisites
 
@@ -29,12 +29,13 @@ after a fresh install and after any change to `prisma/schema.prisma`.
 ## The gate
 
 Run all four checks before every commit and before opening a pull request. CI runs the same
-four commands (see `.github/workflows/ci.yml`) and must stay green.
+checks (see `.github/workflows/ci.yml`), using `npm run test:coverage` so the coverage
+threshold is enforced, and must stay green.
 
 ```
 npm run typecheck   # tsc --noEmit
 npm run lint        # ESLint (Shopify flat config), no warnings
-npm run test        # Vitest (currently 101 tests)
+npm run test        # Vitest
 npm run build       # remix vite:build
 ```
 
@@ -54,7 +55,7 @@ not required for a change.
   validation, filter compilation, throttle pacing, inverse-edit computation) is unit tested;
   the worker lifecycle is covered by integration tests against a mocked Admin API. A bug fix
   should come with a test that fails before it.
-- **Do not weaken the safety invariants** listed in `docs/rules.md`: product writes happen only
+- **Do not weaken the safety invariants** listed in `docs/decisions.md`: product writes happen only
   in `app/worker/apply.server.ts` from a `queued` job, every applied item captures its
   before-value, status transitions are guarded, and relative adjustments resolve to absolute
   values at staging time.
@@ -68,8 +69,8 @@ not required for a change.
 - Keep the branch focused on one topic. Rebase on the latest `main` before opening.
 - Fill in the pull request template: confirm typecheck, lint, test, and build all pass, and
   describe how you verified the change.
-- If a change is not covered by the PRD, say so in the description and flag whether it should be
-  a new phase or logged to the backlog in `docs/phases.md`.
+- If a change adds scope beyond the current feature set, say so in the description so it can be
+  discussed before review.
 - Security-sensitive reports should follow [`SECURITY.md`](SECURITY.md) rather than a public
   pull request or issue.
 

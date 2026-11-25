@@ -60,7 +60,8 @@ Exact versions are pinned in `package.json` and the lockfile is committed.
 
 ## Design decisions
 
-The trade-offs worth knowing before reading the code. Fuller rationale in
+The trade-offs worth knowing before reading the code. The full list, including the bugs and edge
+cases behind each one, is in `docs/decisions.md`; the job engine is described in
 `docs/architecture.md`.
 
 ### Throttled sequential mutations, not `bulkOperationRunMutation`
@@ -108,13 +109,13 @@ queue library.
 
 The worker is in-process and claims jobs without cross-instance locking, so production must run
 exactly one instance. That is the deliberate price of not adding a queue or lock service, and it
-is a line item on `docs/launch-checklist.md`.
+is repeated in the operational notes below.
 
 ### Undo is limited to the most recent applied job
 
-Only the shop's most recent `completed` / `completed_with_errors` edit or import job can be
-undone, and only once (`undoOfJobId` is unique; `undoneByJobId` closes it). No redo, and no undo
-of arbitrary historical jobs - an explicit non-goal in the PRD, because older jobs' before-values
+Only the shop's most recent `completed`, `completed_with_errors`, or `canceled` edit or import job
+that applied at least one item can be undone, and only once (`undoOfJobId` is unique; `undoneByJobId` closes it). No redo, and no undo
+of arbitrary historical jobs, because older jobs' before-values
 are no longer a truthful picture of the catalog. Undo is not a blind rollback: it is computed
 from stored before-values, staged as a normal job behind the same preview gate, and any product
 whose live value changed since the apply is skipped and reported rather than overwritten. Tags
@@ -194,7 +195,12 @@ stale-skip and resume, export completion) against a mocked Admin API and a throw
   without cross-instance locking.
 - `storage/exports/` must be on a persistent disk in production; export files are cleaned up after
   7 days and stale draft/staged jobs after 24 hours.
-- See `docs/launch-checklist.md` before shipping.
+- `SECURITY.md` lists the remaining deployment requirements.
 
-See `docs/` for the PRD, architecture, API contracts, phases, engineering rules, design, and testing
-strategy.
+## Documentation
+
+- `docs/architecture.md`: app flow, job engine, data model, and environment variables
+- `docs/api-contracts.md`: routes, JSON shapes, the CSV contract, and Admin GraphQL operations
+- `docs/design.md`: screens, Polaris components, and the accessibility baseline
+- `docs/testing.md`: test strategy, commands, and what CI runs
+- `docs/decisions.md`: design decisions and the edge cases behind them
