@@ -221,7 +221,7 @@ product_id,variant_id,handle,product_title,variant_title,vendor,status,tags,pric
 gid://shopify/Product/1,gid://shopify/ProductVariant/11,blue-shirt,Blue Shirt,Small,Acme,ACTIVE,"sale, summer",10.00
 ```
 
-Formula-injection guard: any cell that would start with `=`, `+`, `-`, or `@` is prefixed with `'` on export.
+Formula-injection guard: any cell that would start with `=`, `+`, `-`, `@`, a tab, or a carriage return is prefixed with `'` on export. Import removes a leading `'` that is followed by one of those characters, so an exported file re-imports with its original values.
 
 ### Import rules
 

@@ -1,7 +1,7 @@
 import { parse } from "csv-parse/sync";
 import { describe, expect, it } from "vitest";
 
-import { escapeCsvCell, jsonlToCsv, parseImportCsv } from "./csv.server";
+import { escapeCsvCell, jsonlToCsv, parseImportCsv, unescapeCsvCell } from "./csv.server";
 
 describe("escapeCsvCell", () => {
   it("prefixes cells that could be read as a formula", () => {
@@ -19,6 +19,29 @@ describe("escapeCsvCell", () => {
   it("leaves ordinary cells untouched", () => {
     expect(escapeCsvCell("Blue Shirt")).toBe("Blue Shirt");
     expect(escapeCsvCell("10.00")).toBe("10.00");
+  });
+});
+
+describe("unescapeCsvCell", () => {
+  it("removes exactly the quote that escapeCsvCell adds", () => {
+    for (const value of [
+      "=SUM(A1)",
+      "+1",
+      "-20%",
+      "@x",
+      "\t=x",
+      "\r=x",
+      "Blue Shirt",
+      "10.00",
+      "",
+    ]) {
+      expect(unescapeCsvCell(escapeCsvCell(value))).toBe(value);
+    }
+  });
+
+  it("keeps a leading quote that is not followed by a trigger", () => {
+    expect(unescapeCsvCell("'quoted'")).toBe("'quoted'");
+    expect(unescapeCsvCell("Sam's")).toBe("Sam's");
   });
 });
 
@@ -79,6 +102,41 @@ describe("jsonlToCsv", () => {
 
 describe("parseImportCsv", () => {
   const header = "product_id,variant_id,product_title,status,tags,price";
+
+  it("re-imports an exported file without changing escaped values", () => {
+    const exported = jsonlToCsv(
+      [
+        JSON.stringify({
+          id: "gid://shopify/Product/3",
+          title: "-Clearance",
+          status: "ACTIVE",
+          tags: ["-20%", "summer"],
+        }),
+        JSON.stringify({
+          id: "gid://shopify/ProductVariant/31",
+          price: "9.50",
+          __parentId: "gid://shopify/Product/3",
+        }),
+      ].join("\n"),
+    );
+
+    // The export guards the cells, so the file itself carries the quote.
+    expect(exported).toContain("'-20%, summer");
+
+    const result = parseImportCsv(exported);
+    expect(result.ok).toBe(true);
+    expect(result.invalidRows).toEqual([]);
+    expect(result.products).toEqual([
+      {
+        productGid: "gid://shopify/Product/3",
+        productTitle: "-Clearance",
+        variants: [{ variantId: "gid://shopify/ProductVariant/31", price: "9.50" }],
+        status: "ACTIVE",
+        tags: ["-20%", "summer"],
+        firstRow: 1,
+      },
+    ]);
+  });
 
   it("rejects a file missing required columns", () => {
     const result = parseImportCsv("handle,price\nx,1.00");

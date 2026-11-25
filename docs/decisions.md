@@ -118,8 +118,11 @@ parsed in memory. Hardening found these edge cases:
 
 `escapeCsvCell` prefixes a quote to any cell that a spreadsheet would treat as a formula. The
 original guard covered `=`, `+`, `-`, and `@` but missed a leading tab or carriage return, which
-spreadsheets also treat as formula triggers; both are now included. All quoting goes through
-`csv-stringify` and `csv-parse` rather than hand-split lines.
+spreadsheets also treat as formula triggers; both are now included. Import reverses the guard
+with `unescapeCsvCell`, which drops a leading quote only when a trigger character follows it.
+Before that, re-importing an export changed every product whose first tag started with a
+trigger (a tag such as `-20%` came back as `'-20%`). All quoting goes through `csv-stringify`
+and `csv-parse` rather than hand-split lines.
 
 ## 11. Money is rounded half away from zero
 
@@ -148,8 +151,9 @@ after 7 days, clearing `resultPath` so the download link returns a friendly 404.
 
 ## 14. Dependency pins that are deliberate
 
-Build-time transitives of `@remix-run/dev` that ship vulnerable versions its ranges still allow
-are forced through `overrides`, because the patched versions sit outside those ranges. Vite stays
+Transitives that ship vulnerable versions their parents' ranges still allow are forced through
+`overrides`, because the patched versions sit outside those ranges: five build-time packages under
+`@remix-run/dev`, plus `body-parser` and `qs` under the Express server in `@remix-run/serve`. Vite stays
 on 6 because `@remix-run/dev` 2.x declares `^5.1.0 || ^6.0.0`. `turbo-stream` is intentionally not
 overridden: its patched 3.x line is incompatible with Remix 2 single fetch, which this app enables.
 With the override applied, typecheck, lint, tests, and build all still passed while every loader
