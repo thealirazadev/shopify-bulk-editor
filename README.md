@@ -52,7 +52,8 @@ file with row-level validation and a dry-run preview before anything is written.
 
 - Remix (Vite) + TypeScript, Shopify App Remix (OAuth, sessions, webhooks)
 - Polaris + App Bridge for the embedded UI
-- Prisma with SQLite (dev) / Postgres (prod)
+- Prisma with SQLite (the provider is fixed in `prisma/schema.prisma`; Postgres needs that
+  provider changed and the migrations regenerated, not only `DATABASE_URL`)
 - A DB-backed `Job`/`JobItem` table with a single in-process worker (no queue library)
 - Shopify Admin GraphQL API; `csv-parse` / `csv-stringify` for the CSV round-trip
 

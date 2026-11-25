@@ -106,20 +106,22 @@ shopify-bulk-editor/
 Same core stack as `shopify-remix-starter`; exact versions are pinned at install time and the lockfile is committed.
 
 - **Remix 2 (Vite 6) + TypeScript 5** - Loader/action model fits Shopify's per-request auth; the official Shopify package targets it. Vite 6 is the ceiling: `@remix-run/dev` 2.17.5 declares `vite: "^5.1.0 || ^6.0.0"`, so Vite 7+ is out of range until the app moves to React Router 7.
-- **@shopify/shopify-app-remix 4** - OAuth, session token validation, webhook verification/registration. No hand-rolled auth.
+- **@shopify/shopify-app-remix 4** - OAuth, session token validation, webhook HMAC verification. Webhook subscriptions are declared once, in `shopify.app.toml`, and not registered again per shop after OAuth. No hand-rolled auth.
 - **@shopify/polaris 13 + @shopify/app-bridge-react 4** - Native Admin look, embedded framing, navigation, toasts. No other UI framework.
-- **Prisma 6 + SQLite (dev) / Postgres (prod)** - First-class session adapter; the job tables need nothing beyond a relational store. Same schema in both environments via `DATABASE_URL`.
-- **csv-parse 5 / csv-stringify 6** - Battle-tested streaming CSV handling with correct quoting/escaping semantics; hand-rolling CSV parsing is a known bug farm. Only new runtime dependencies beyond the starter set.
-- **Vitest 3** - Unit tests for the pure logic that carries the safety guarantees (price math, validation, diffing, inverse edits, throttle pacing).
+- **Prisma 6 + SQLite** - First-class session adapter; the job tables need nothing beyond a relational store. The provider is fixed to `sqlite` in `prisma/schema.prisma`, so running on Postgres means changing that provider and regenerating the migrations; `DATABASE_URL` alone cannot switch engines.
+- **csv-parse 7 / csv-stringify 6** - Battle-tested streaming CSV handling with correct quoting/escaping semantics; hand-rolling CSV parsing is a known bug farm. Only new runtime dependencies beyond the starter set.
+- **Vitest 5** - Unit tests for the pure logic that carries the safety guarantees (price math, validation, diffing, inverse edits, throttle pacing).
 - **No queue/worker library** - Justified above.
-- **Node 20 LTS, Shopify CLI for dev tunneling** - As in the starter.
+- **Node 18.20 or later (`engines`), Node 24 in CI; Shopify CLI for dev tunneling** - As in the starter.
 
 ### Pinned transitive dependencies
 
-`package.json` carries an `overrides` block (`tar`, `esbuild`, `estree-util-value-to-estree`,
-`vite`). These are build-time transitives of `@remix-run/dev` that ship known-vulnerable versions
-its manifest still allows; the overrides force patched releases. All four are dev/build scope and
-none is reachable from the running server. Revisit the block on any Remix upgrade - if the upstream
+`package.json` carries an `overrides` block of seven packages: `tar`, `estree-util-value-to-estree`,
+`vite`, `esbuild`, `body-parser`, `toml`, and `qs`. They are transitives that ship known-vulnerable
+versions their parents' ranges still allow; the overrides force patched releases. `tar`,
+`estree-util-value-to-estree`, `vite`, `esbuild`, and `toml` are dev/build scope (under
+`@remix-run/dev` and Vite). `body-parser` and `qs` sit under `@remix-run/serve`'s
+Express server, so they are reachable from `npm start`. Revisit the block on any Remix upgrade - if the upstream
 ranges move past the pinned versions, drop the entry rather than carrying a stale pin.
 
 `turbo-stream` is deliberately **not** overridden. It is a runtime dependency of `@remix-run/react`
@@ -254,7 +256,7 @@ Only fields the edit set touches are captured. Example for a price + tags edit:
 - **Shopify OAuth + webhooks** - Via `@shopify/shopify-app-remix`.
 - **Shopify bulk operation result storage** - The JSONL result `url` returned on the `BulkOperation` node (time-limited download; fetched server-side by the worker).
 - **Shopify CLI tunneling** - Local development only.
-- **Database** - SQLite locally; managed Postgres in production.
+- **Database** - SQLite through Prisma (see the provider note above).
 
 ## Required environment variables
 
@@ -264,6 +266,6 @@ Only fields the edit set touches are captured. Example for a price + tags edit:
 | `SHOPIFY_API_SECRET` | App Client Secret. Verifies webhook HMAC, exchanges OAuth codes. |
 | `SCOPES` | `read_products,write_products` - covers products, variants, and product metafields. |
 | `SHOPIFY_APP_URL` | Public HTTPS base URL (tunnel in dev). Builds OAuth and webhook callback URLs. |
-| `DATABASE_URL` | Prisma connection string. SQLite file in dev; Postgres in prod. |
+| `DATABASE_URL` | Prisma connection string for the SQLite file (for example `file:./dev.sqlite`). |
 
 All documented with dummy values in `.env.example`. Startup fails fast with a readable error if any is missing.
