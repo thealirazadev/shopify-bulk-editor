@@ -47,6 +47,11 @@ describe("compileFilter", () => {
   it("strips wildcards inside a title so the pattern is not broken", () => {
     expect(compileFilter({ title: "a*b" })).toBe("title:*ab*");
   });
+
+  it("trims values and escapes single quotes in a title", () => {
+    expect(compileFilter({ vendor: "  Acme  " })).toBe("vendor:'Acme'");
+    expect(compileFilter({ title: " O'Neil " })).toBe("title:*O\\'Neil*");
+  });
 });
 
 describe("filterFromParams", () => {
