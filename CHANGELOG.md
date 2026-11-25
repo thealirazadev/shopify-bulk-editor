@@ -33,6 +33,13 @@ No versioned release has been tagged yet; everything below is unreleased and dev
   security policy, contributing guide, code of conduct, issue and pull-request templates, and a
   CSV parse throughput benchmark.
 
+### Fixed
+
+- Re-importing an exported CSV no longer rewrites tags that start with a formula trigger
+  character: import now removes the quote that the export's formula guard adds.
+- Webhooks are subscribed only in `shopify.app.toml`; the duplicate per-shop registration in
+  `afterAuth`, which could deliver each event twice, is gone.
+
 ### Security
 
 - Cleared 24 of 25 Dependabot alerts (`vite` 5 → 6, `vitest` 2 → 3, transitive `tar`, `esbuild`,

@@ -26,6 +26,14 @@ export function escapeCsvCell(value: string): string {
   return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
 }
 
+// Reverses escapeCsvCell on import, so an exported file re-imports unchanged:
+// without this a tag such as "-20%" came back as "'-20%" and the import
+// rewrote the product's tags. Only a quote followed by a trigger character is
+// removed, which is exactly what the export adds.
+export function unescapeCsvCell(value: string): string {
+  return /^'[=+\-@\t\r]/.test(value) ? value.slice(1) : value;
+}
+
 interface BulkProduct {
   id: string;
   title?: string;
@@ -201,7 +209,7 @@ export function parseImportCsv(content: string): ImportParseResult {
 
   dataRows.forEach((row, idx) => {
     const csvRow = idx + 1;
-    const cell = (col: number) => (col >= 0 ? (row[col] ?? "").trim() : "");
+    const cell = (col: number) => (col >= 0 ? unescapeCsvCell((row[col] ?? "").trim()) : "");
     const productGid = cell(cols.productId);
     const variantId = cell(cols.variantId);
     const productTitle = cell(cols.productTitle) || productGid || `Row ${csvRow}`;
