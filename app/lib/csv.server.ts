@@ -3,7 +3,7 @@ import { stringify } from "csv-stringify/sync";
 
 import { JOB_ITEM_CAP } from "./jobs";
 
-// CSV export serialization and (later) import parsing/validation. Uses
+// CSV export serialization and import parsing/validation. Uses
 // csv-stringify/csv-parse so quoting and escaping are never hand-rolled.
 
 export const CSV_COLUMNS = [
@@ -19,7 +19,7 @@ export const CSV_COLUMNS = [
 ] as const;
 
 // Prefix cells that a spreadsheet could read as a formula so they render as
-// text (docs/rules.md: CSV formula-injection guard). Leading tab (0x09) and
+// text instead of executing it. Leading tab (0x09) and
 // carriage return (0x0D) are triggers too, so they are guarded alongside the
 // = + - @ characters.
 export function escapeCsvCell(value: string): string {

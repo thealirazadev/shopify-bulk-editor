@@ -22,8 +22,8 @@ Other ways to solve the same problem, and why they fall short.
 
 ## Scope check
 
-The following are explicit non-goals in [`docs/PRD.md`](../../docs/PRD.md); please confirm
-your request is not one of them:
+The following are explicit non-goals for this app; please confirm your request is not one of
+them:
 
 - [ ] Not editing orders, customers, inventory, collections, images, or SEO fields
 - [ ] Not App Store billing or pricing plans

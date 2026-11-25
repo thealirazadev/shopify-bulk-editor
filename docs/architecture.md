@@ -44,7 +44,7 @@ Background work uses a `Job`/`JobItem` table in the app database and a single wo
 - The database is already the source of truth for items and results; adding a queue would duplicate state and add a deployment dependency for no gain at this scale.
 - Recovery is data-driven: the worker heartbeats `heartbeatAt` on its running job. On boot (and periodically), jobs in `running` with a heartbeat older than 2 minutes are re-claimed and resumed; items already `applied` are never re-processed, and because after-values are absolute, an accidental re-apply of a completed item writes the same value.
 
-Constraint: exactly one app instance in production (the worker is in-process and jobs are claimed without cross-instance locking). Recorded in the launch checklist.
+Constraint: exactly one app instance in production (the worker is in-process and jobs are claimed without cross-instance locking). Also listed in the README's operational notes and `SECURITY.md`.
 
 ## Folder and file tree
 
@@ -244,7 +244,7 @@ Only fields the edit set touches are captured. Example for a price + tags edit:
 - **Session/auth** - `Session` table via the Prisma adapter. No in-memory session cache.
 - **Jobs, items, saved filters** - Database, keyed by shop. This is the app's only durable feature state.
 - **Product data of record** - Shopify, always. Before-values are point-in-time snapshots for preview/undo, never a mirror; the browser and staging always read live data.
-- **Export files** - Local disk under `storage/exports/<jobId>.csv`, path recorded on the job; cleaned up after 7 days. Production requires a persistent disk (launch checklist).
+- **Export files** - Local disk under `storage/exports/<jobId>.csv`, path recorded on the job; cleaned up after 7 days. Production requires a persistent disk.
 - **UI/request state** - Remix loaders/actions per request. Progress screens poll their own loader; no client-side global store.
 - **Worker state** - None beyond the database. The loop keeps no in-memory queue; a restart loses nothing.
 

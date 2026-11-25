@@ -37,5 +37,5 @@ No versioned release has been tagged yet; everything below is unreleased and dev
 
 - Cleared 24 of 25 Dependabot alerts (`vite` 5 → 6, `vitest` 2 → 3, transitive `tar`, `esbuild`,
   and `estree-util-value-to-estree` pins via `overrides`). The one remaining alert
-  (`turbo-stream`, DoS-only, authenticated routes only) is documented in `docs/memory.md`; its
+  (`turbo-stream`, DoS-only, authenticated routes only) is documented in `docs/architecture.md` and `docs/decisions.md`; its
   patched line is incompatible with Remix 2 single fetch.

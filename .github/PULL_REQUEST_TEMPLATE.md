@@ -26,7 +26,7 @@ All four checks pass locally (CI runs the same commands and must stay green):
 
 ## Safety invariants
 
-Confirm this change does not weaken the guarantees in `docs/rules.md`:
+Confirm this change does not weaken the guarantees in `docs/decisions.md` (section 1):
 
 - [ ] Product writes still happen only in `app/worker/apply.server.ts`, driven by a `queued` job.
 - [ ] No job reaches `queued` except from `staged` via the explicit apply intent.
@@ -42,4 +42,4 @@ Confirm this change does not weaken the guarantees in `docs/rules.md`:
 
 ## Notes for reviewers
 
-<!-- Anything worth calling out: trade-offs, follow-ups, or scope not covered by the PRD. -->
+<!-- Anything worth calling out: trade-offs, follow-ups, or scope outside the current feature set. -->
